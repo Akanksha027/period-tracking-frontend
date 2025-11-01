@@ -1,0 +1,324 @@
+import { Period, UserSettings } from './api'
+
+export type CyclePhase = 'period' | 'fertile' | 'pms' | 'normal' | 'predicted_period'
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
+
+export interface DayInfo {
+  date: Date
+  phase: CyclePhase
+  confidence: ConfidenceLevel
+  isPeriod: boolean
+  isFertile: boolean
+  isPMS: boolean
+  isPredicted: boolean
+}
+
+export interface CyclePredictions {
+  nextPeriodDate: Date | null
+  ovulationDate: Date | null
+  fertileWindowStart: Date | null
+  fertileWindowEnd: Date | null
+  pmsStart: Date | null
+  pmsEnd: Date | null
+  cycleLength: number
+  periodLength: number
+  confidence: ConfidenceLevel
+}
+
+/**
+ * Calculate cycle predictions based on period history
+ */
+export function calculatePredictions(
+  periods: Period[],
+  settings: UserSettings | null
+): CyclePredictions {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  // If no periods, use settings defaults with low confidence
+  if (periods.length === 0) {
+    const cycleLength = settings?.averageCycleLength ?? 28
+    const periodLength = settings?.averagePeriodLength ?? 5
+    
+    return {
+      nextPeriodDate: null,
+      ovulationDate: null,
+      fertileWindowStart: null,
+      fertileWindowEnd: null,
+      pmsStart: null,
+      pmsEnd: null,
+      cycleLength,
+      periodLength,
+      confidence: 'low',
+    }
+  }
+
+  // Get the most recent period
+  const sortedPeriods = [...periods].sort(
+    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+  )
+  const lastPeriod = sortedPeriods[0]
+  const lastPeriodStart = new Date(lastPeriod.startDate)
+  lastPeriodStart.setHours(0, 0, 0, 0)
+
+  // Calculate average cycle length from history
+  let totalCycleDays = 0
+  let cycleCount = 0
+
+  for (let i = 0; i < sortedPeriods.length - 1; i++) {
+    const current = new Date(sortedPeriods[i].startDate)
+    const next = new Date(sortedPeriods[i + 1].startDate)
+    const diff = Math.abs(current.getTime() - next.getTime())
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+    totalCycleDays += days
+    cycleCount++
+  }
+
+  // Use calculated average or fallback to settings/default
+  const avgCycleLength =
+    cycleCount > 0
+      ? Math.round(totalCycleDays / cycleCount)
+      : settings?.averageCycleLength || 28
+
+  // Calculate average period length
+  let totalPeriodDays = 0
+  let periodCount = 0
+
+  for (const period of sortedPeriods) {
+    if (period.endDate) {
+      const start = new Date(period.startDate)
+      const end = new Date(period.endDate)
+      const diff = Math.abs(end.getTime() - start.getTime())
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1 // +1 to include both start and end
+      totalPeriodDays += days
+      periodCount++
+    } else {
+      // If no end date, assume period length from settings
+      totalPeriodDays += settings?.averagePeriodLength || 5
+      periodCount++
+    }
+  }
+
+  const avgPeriodLength =
+    periodCount > 0
+      ? Math.round(totalPeriodDays / periodCount)
+      : settings?.averagePeriodLength || 5
+
+  // Predict next period
+  const nextPeriodDate = new Date(lastPeriodStart)
+  nextPeriodDate.setDate(nextPeriodDate.getDate() + avgCycleLength)
+
+  // Calculate ovulation (cycle length - 14 days before next period)
+  const ovulationDate = new Date(nextPeriodDate)
+  ovulationDate.setDate(ovulationDate.getDate() - 14)
+
+  // Fertile window: 5 days before ovulation to ovulation day
+  const fertileWindowStart = new Date(ovulationDate)
+  fertileWindowStart.setDate(fertileWindowStart.getDate() - 5)
+
+  const fertileWindowEnd = new Date(ovulationDate)
+
+  // PMS window: 5 days before next period to 1 day before
+  const pmsStart = new Date(nextPeriodDate)
+  pmsStart.setDate(pmsStart.getDate() - 5)
+
+  const pmsEnd = new Date(nextPeriodDate)
+  pmsEnd.setDate(pmsEnd.getDate() - 1)
+
+  // Confidence increases with more cycles
+  let confidence: ConfidenceLevel = 'low'
+  if (cycleCount >= 3) {
+    confidence = 'high'
+  } else if (cycleCount >= 1) {
+    confidence = 'medium'
+  }
+
+  return {
+    nextPeriodDate,
+    ovulationDate,
+    fertileWindowStart,
+    fertileWindowEnd,
+    pmsStart,
+    pmsEnd,
+    cycleLength: avgCycleLength,
+    periodLength: avgPeriodLength,
+    confidence,
+  }
+}
+
+/**
+ * Get phase information for a specific date
+ */
+export function getDayInfo(
+  date: Date,
+  periods: Period[],
+  predictions: CyclePredictions
+): DayInfo {
+  const dayDate = new Date(date)
+  dayDate.setHours(0, 0, 0, 0)
+
+  const dateString = dayDate.toISOString().split('T')[0]
+
+  // Check if it's an actual period day
+  const isPeriod = periods.some((period) => {
+    const start = new Date(period.startDate)
+    start.setHours(0, 0, 0, 0)
+    const end = period.endDate ? new Date(period.endDate) : start
+    end.setHours(0, 0, 0, 0)
+    return dayDate >= start && dayDate <= end
+  })
+
+  if (isPeriod) {
+    return {
+      date: dayDate,
+      phase: 'period',
+      confidence: 'high',
+      isPeriod: true,
+      isFertile: false,
+      isPMS: false,
+      isPredicted: false,
+    }
+  }
+
+  // Check fertile window
+  if (
+    predictions.fertileWindowStart &&
+    predictions.fertileWindowEnd &&
+    dayDate >= predictions.fertileWindowStart &&
+    dayDate <= predictions.fertileWindowEnd
+  ) {
+    return {
+      date: dayDate,
+      phase: 'fertile',
+      confidence: predictions.confidence,
+      isPeriod: false,
+      isFertile: true,
+      isPMS: false,
+      isPredicted: true,
+    }
+  }
+
+  // Check PMS window
+  if (
+    predictions.pmsStart &&
+    predictions.pmsEnd &&
+    dayDate >= predictions.pmsStart &&
+    dayDate <= predictions.pmsEnd
+  ) {
+    return {
+      date: dayDate,
+      phase: 'pms',
+      confidence: predictions.confidence,
+      isPeriod: false,
+      isFertile: false,
+      isPMS: true,
+      isPredicted: true,
+    }
+  }
+
+  // Check predicted period (only if we have predictions)
+  if (predictions.nextPeriodDate) {
+    const predictedPeriodEnd = new Date(predictions.nextPeriodDate)
+    predictedPeriodEnd.setDate(
+      predictedPeriodEnd.getDate() + predictions.periodLength - 1
+    )
+
+    if (dayDate >= predictions.nextPeriodDate && dayDate <= predictedPeriodEnd) {
+      return {
+        date: dayDate,
+        phase: 'predicted_period',
+        confidence: predictions.confidence,
+        isPeriod: false,
+        isFertile: false,
+        isPMS: false,
+        isPredicted: true,
+      }
+    }
+  }
+
+  return {
+    date: dayDate,
+    phase: 'normal',
+    confidence: 'high',
+    isPeriod: false,
+    isFertile: false,
+    isPMS: false,
+    isPredicted: false,
+  }
+}
+
+/**
+ * Get a supportive hormonal mood note for a phase
+ */
+export function getPhaseNote(phase: CyclePhase): string {
+  switch (phase) {
+    case 'period':
+      return "Rest and be gentle with yourself. Your body is working hard 💕"
+    case 'fertile':
+      return "You're in your fertile window! Energy may be higher 🌟"
+    case 'pms':
+      return "Premenstrual phase - mood changes are normal and valid 🫶"
+    case 'predicted_period':
+      return "Predicted period day - listen to what your body needs"
+    default:
+      return "You're doing great! Keep tracking to know your cycle better ✨"
+  }
+}
+
+/**
+ * Get period day information (what day of period are you on)
+ */
+export function getPeriodDayInfo(date: Date, periods: Period[]): {
+  dayNumber: number
+  dayLabel: string
+  periodLength: number
+  isStart: boolean
+  isMiddle: boolean
+  isEnd: boolean
+} | null {
+  const dayDate = new Date(date)
+  dayDate.setHours(0, 0, 0, 0)
+
+  // Find which period contains this date
+  const currentPeriod = periods.find((period) => {
+    const start = new Date(period.startDate)
+    start.setHours(0, 0, 0, 0)
+    const end = period.endDate ? new Date(period.endDate) : start
+    end.setHours(0, 0, 0, 0)
+    return dayDate >= start && dayDate <= end
+  })
+
+  if (!currentPeriod) {
+    return null
+  }
+
+  const startDate = new Date(currentPeriod.startDate)
+  startDate.setHours(0, 0, 0, 0)
+  const endDate = currentPeriod.endDate ? new Date(currentPeriod.endDate) : startDate
+  endDate.setHours(0, 0, 0, 0)
+
+  const diff = Math.floor((dayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+  const dayNumber = diff + 1
+  const periodLength = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+  let dayLabel = ''
+  if (dayNumber === 1) {
+    dayLabel = '1st day'
+  } else if (dayNumber === 2) {
+    dayLabel = '2nd day'
+  } else if (dayNumber === 3) {
+    dayLabel = '3rd day'
+  } else {
+    dayLabel = `${dayNumber}th day`
+  }
+
+  return {
+    dayNumber,
+    dayLabel,
+    periodLength,
+    isStart: dayNumber === 1,
+    isMiddle: dayNumber > 1 && dayNumber < periodLength,
+    isEnd: dayNumber === periodLength,
+  }
+}
+
