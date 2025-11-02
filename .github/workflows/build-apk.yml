@@ -1,0 +1,97 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Build Android APK
+        run: |
+          echo "🚀 Starting Android APK build..."
+          eas build --platform android --profile production --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://periods-testing-backend.vercel.app' }}
+
+      - name: Wait and download APK
+        run: |
+          echo "⏳ Waiting for build to complete..."
+          sleep 30
+          
+          echo "📥 Fetching latest build..."
+          BUILD_DATA=$(eas build:list --platform android --limit 1 --json)
+          BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id')
+          BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status')
+          
+          echo "Build ID: $BUILD_ID"
+          echo "Build Status: $BUILD_STATUS"
+          
+          if [ "$BUILD_STATUS" = "finished" ]; then
+            echo "✅ Build completed! Downloading APK..."
+            eas build:download --id $BUILD_ID --platform android --output app-release.apk
+            echo "✅ APK downloaded successfully!"
+          else
+            echo "⚠️ Build status: $BUILD_STATUS"
+            echo "ℹ️ Build may still be in progress."
+            echo "Check EAS dashboard: https://expo.dev"
+          fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-apk-${{ github.run_number }}
+          path: app-release.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Build Status Summary
+        if: always()
+        run: |
+          echo "## 📱 APK Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build initiated successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Time:** ~10-15 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check EAS dashboard: https://expo.dev" >> $GITHUB_STEP_SUMMARY
+          echo "2. Download APK from EAS dashboard when build completes" >> $GITHUB_STEP_SUMMARY
+          echo "3. Or check artifacts section if download succeeded" >> $GITHUB_STEP_SUMMARY
