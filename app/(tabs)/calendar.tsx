@@ -14,7 +14,6 @@ import {
   Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Calendar } from 'react-native-calendars'
 import { useFocusEffect } from 'expo-router'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Colors } from '../../constants/Colors'
@@ -24,56 +23,77 @@ import {
   createPeriod,
   updatePeriod,
   deletePeriod,
+  getSymptoms,
+  getMoods,
   Period,
   UserSettings,
+  Symptom,
+  Mood,
 } from '../../lib/api'
 import {
   calculatePredictions,
   getDayInfo,
+  getPeriodDayInfo,
   getPhaseNote,
   DayInfo,
   CyclePredictions,
 } from '../../lib/periodCalculations'
 import { Ionicons } from '@expo/vector-icons'
+import SymptomTracker from '../../components/SymptomTracker'
+import { symptomOptions } from '../../lib/symptomTips'
 
 const { width } = Dimensions.get('window')
+const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export default function CalendarScreen() {
   const [loading, setLoading] = useState(true)
   const [periods, setPeriods] = useState<Period[]>([])
   const [settings, setSettings] = useState<UserSettings | null>(null)
-  const [markedDates, setMarkedDates] = useState<any>({})
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedDayInfo, setSelectedDayInfo] = useState<DayInfo | null>(null)
   const [showDayDetail, setShowDayDetail] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null)
-  const [showEditDate, setShowEditDate] = useState(false)
-  const [showDatePicker, setShowDatePicker] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<Period | null>(null)
+  const [showDatePicker, setShowDatePicker] = useState(false)
   const [newPeriodDate, setNewPeriodDate] = useState<Date>(new Date())
+  const [daySymptoms, setDaySymptoms] = useState<Symptom[]>([])
+  const [dayMoods, setDayMoods] = useState<Mood[]>([])
+  const [showSymptomTracker, setShowSymptomTracker] = useState(false)
+  const [symptomTrackerDate, setSymptomTrackerDate] = useState<Date>(new Date())
 
-  // Calculate predictions
   const predictions = useMemo<CyclePredictions>(() => {
     return calculatePredictions(periods, settings)
   }, [periods, settings])
+
+  // Helper function for generating months
+  const generateMonths = useCallback(() => {
+    const months = []
+    const today = new Date()
+    
+    for (let i = -2; i <= 12; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() + i, 1)
+      months.push(date)
+    }
+    
+    return months
+  }, [])
+
+  const months = useMemo(() => generateMonths(), [generateMonths])
+  
+  // Create a key that changes when periods or predictions change to force re-render
+  const calendarKey = useMemo(() => {
+    return `${periods.length}-${periods.map(p => p.id).join('-')}-${predictions.nextPeriodDate?.getTime() || ''}`
+  }, [periods, predictions])
 
   useEffect(() => {
     loadData()
   }, [])
 
-  // Refresh when tab is focused
   useFocusEffect(
     useCallback(() => {
       loadData()
     }, [])
   )
-
-  useEffect(() => {
-    if (periods.length > 0 || settings) {
-      markCalendarDates()
-    }
-  }, [periods, settings, predictions])
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -96,114 +116,166 @@ export default function CalendarScreen() {
     }
   }
 
-  const markCalendarDates = () => {
-    const marked: any = {}
-    const today = new Date()
+  const getDaysInMonth = (year: number, month: number) => {
+    return new Date(year, month + 1, 0).getDate()
+  }
 
-    // Mark actual period days
-    periods.forEach((period) => {
-      const startDate = new Date(period.startDate)
-      startDate.setHours(0, 0, 0, 0)
-      const endDate = period.endDate ? new Date(period.endDate) : startDate
-      endDate.setHours(0, 0, 0, 0)
+  const getFirstDayOfMonth = (year: number, month: number) => {
+    const day = new Date(year, month, 1).getDay()
+    return day === 0 ? 6 : day - 1 // Convert Sunday=0 to Sunday=6, Monday=0
+  }
 
-      let currentDate = new Date(startDate)
-      while (currentDate <= endDate) {
-        const dateString = currentDate.toISOString().split('T')[0]
-        marked[dateString] = {
-          dots: [
-            {
-              key: 'period',
-              color: Colors.primary,
-              selectedDotColor: Colors.primary,
-            },
-          ],
-          marked: true,
-        }
-        currentDate.setDate(currentDate.getDate() + 1)
-      }
+  const getDayStatus = (date: Date) => {
+    const dayInfo = getDayInfo(date, periods, predictions)
+    
+    // Check if it's an actual period day
+    const isPeriodDay = periods.some((period) => {
+      const start = new Date(period.startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = period.endDate ? new Date(period.endDate) : start
+      end.setHours(0, 0, 0, 0)
+      return date >= start && date <= end
     })
 
-    // Mark predictions for next 90 days
-    if (predictions.nextPeriodDate) {
-      const startDate = new Date()
-      const endDate = new Date(startDate)
-      endDate.setDate(endDate.getDate() + 90)
-
-      let currentDate = new Date(startDate)
-      while (currentDate <= endDate) {
-        const dayInfo = getDayInfo(currentDate, periods, predictions)
-        const dateString = currentDate.toISOString().split('T')[0]
-
-        // Don't override actual period days
-        if (!marked[dateString]) {
-          const dots: any[] = []
-
-          if (dayInfo.isFertile) {
-            dots.push({
-              key: 'fertile',
-              color: '#4A90E2', // Blue
-              selectedDotColor: '#4A90E2',
-            })
-          }
-
-          if (dayInfo.isPMS) {
-            dots.push({
-              key: 'pms',
-              color: '#FFD93D', // Yellow
-              selectedDotColor: '#FFD93D',
-            })
-          }
-
-          if (dayInfo.phase === 'predicted_period') {
-            dots.push({
-              key: 'predicted',
-              color: dayInfo.confidence === 'low' ? '#CCCCCC' : Colors.primary, // Grey for low confidence
-              selectedDotColor:
-                dayInfo.confidence === 'low' ? '#CCCCCC' : Colors.primary,
-            })
-          }
-
-          if (dots.length > 0) {
-            marked[dateString] = {
-              dots,
-              marked: true,
-            }
-          }
-        } else {
-          // Add other dots to existing period days if needed
-          const dayInfo = getDayInfo(currentDate, periods, predictions)
-          const existingDots = marked[dateString].dots || []
-
-          if (dayInfo.isFertile && !existingDots.find((d: any) => d.key === 'fertile')) {
-            existingDots.push({
-              key: 'fertile',
-              color: '#4A90E2',
-            })
-          }
-
-          if (dayInfo.isPMS && !existingDots.find((d: any) => d.key === 'pms')) {
-            existingDots.push({
-              key: 'pms',
-              color: '#FFD93D',
-            })
-          }
-
-          marked[dateString].dots = existingDots
+    if (isPeriodDay) {
+      // Find position in period (start, middle, end)
+      const period = periods.find((p) => {
+        const start = new Date(p.startDate)
+        start.setHours(0, 0, 0, 0)
+        const end = p.endDate ? new Date(p.endDate) : start
+        end.setHours(0, 0, 0, 0)
+        return date >= start && date <= end
+      })
+      
+      if (period) {
+        const start = new Date(period.startDate)
+        start.setHours(0, 0, 0, 0)
+        const end = period.endDate ? new Date(period.endDate) : start
+        end.setHours(0, 0, 0, 0)
+        
+        const isFirst = date.getTime() === start.getTime()
+        const isLast = date.getTime() === end.getTime()
+        
+        return {
+          type: 'period',
+          isFirst,
+          isLast,
+          isSingle: isFirst && isLast,
         }
-
-        currentDate.setDate(currentDate.getDate() + 1)
       }
     }
 
-    setMarkedDates(marked)
+    if (dayInfo.isFertile) {
+      return { type: 'fertile' }
+    }
+
+    if (dayInfo.phase === 'predicted_period') {
+      // Check if first or last of predicted period
+      const yesterday = new Date(date)
+      yesterday.setDate(yesterday.getDate() - 1)
+      const tomorrow = new Date(date)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      
+      const yesterdayInfo = getDayInfo(yesterday, periods, predictions)
+      const tomorrowInfo = getDayInfo(tomorrow, periods, predictions)
+      
+      const isFirst = !yesterdayInfo.isPredicted
+      const isLast = !tomorrowInfo.isPredicted
+      
+      return {
+        type: dayInfo.confidence === 'low' ? 'predicted_low' : 'predicted',
+        isFirst,
+        isLast,
+        isSingle: isFirst && isLast,
+      }
+    }
+
+    return { type: 'normal' }
   }
 
-  const handleDayPress = (day: any) => {
-    const date = new Date(day.dateString)
+  const renderMonth = (monthDate: Date) => {
+    const year = monthDate.getFullYear()
+    const month = monthDate.getMonth()
+    const daysInMonth = getDaysInMonth(year, month)
+    const firstDay = getFirstDayOfMonth(year, month)
+    
+    const monthName = monthDate.toLocaleDateString('en-US', { month: 'long' })
+    
+    const days = []
+    
+    // Empty cells for days before month starts
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<View key={`empty-${i}`} style={styles.dayCell} />)
+    }
+    
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day)
+      date.setHours(0, 0, 0, 0)
+      // Create date string in YYYY-MM-DD format without timezone conversion
+      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const status = getDayStatus(date)
+      
+      let containerStyle: any[] = [styles.dayCell]
+      let textStyle: any[] = [styles.dayText]
+      
+      if (status.type === 'period') {
+        containerStyle = [
+          styles.dayCell,
+          styles.periodDay,
+          status.isFirst && styles.periodFirst,
+          status.isLast && styles.periodLast,
+          status.isSingle && styles.periodSingle,
+        ].filter(Boolean)
+        textStyle = [styles.dayText, styles.periodText]
+      } else if (status.type === 'fertile') {
+        containerStyle = [styles.dayCell, styles.fertileDay]
+        textStyle = [styles.dayText]
+      } else if (status.type === 'predicted') {
+        containerStyle = [
+          styles.dayCell,
+          styles.predictedDay,
+          status.isFirst && styles.periodFirst,
+          status.isLast && styles.periodLast,
+          status.isSingle && styles.periodSingle,
+        ].filter(Boolean)
+        textStyle = [styles.dayText, styles.periodText]
+      } else if (status.type === 'predicted_low') {
+        containerStyle = [
+          styles.dayCell,
+          styles.predictedLowDay,
+          status.isFirst && styles.periodFirst,
+          status.isLast && styles.periodLast,
+          status.isSingle && styles.periodSingle,
+        ].filter(Boolean)
+        textStyle = [styles.dayText, styles.periodText]
+      }
+      
+      days.push(
+        <TouchableOpacity
+          key={day}
+          style={containerStyle}
+          onPress={() => handleDayPress(dateString, date)}
+        >
+          <Text style={textStyle}>{day}</Text>
+          {status.type !== 'normal' && <View style={styles.dotIndicator} />}
+        </TouchableOpacity>
+      )
+    }
+    
+    return (
+      <View key={`${year}-${month}`} style={styles.monthContainer}>
+        <Text style={styles.monthTitle}>{monthName}</Text>
+        <View style={styles.calendarGrid}>
+          {days}
+        </View>
+      </View>
+    )
+  }
+
+  const handleDayPress = (dateString: string, date: Date) => {
     const dayInfo = getDayInfo(date, periods, predictions)
     
-    // Find if this day is part of an actual period
     const periodForDay = periods.find((period) => {
       const start = new Date(period.startDate)
       start.setHours(0, 0, 0, 0)
@@ -212,15 +284,76 @@ export default function CalendarScreen() {
       return date >= start && date <= end
     })
     
-    setSelectedDate(day.dateString)
+    setSelectedDate(dateString)
     setSelectedDayInfo(dayInfo)
     setEditingPeriod(periodForDay || null)
     setShowDayDetail(true)
+    // Parse dateString back to Date object for loading symptoms
+    const [year, month, day] = dateString.split('-').map(Number)
+    const dateForLoading = new Date(year, month - 1, day)
+    setSymptomTrackerDate(dateForLoading)
+    loadDaySymptoms(dateForLoading)
+  }
+
+  const loadDaySymptoms = async (date: Date) => {
+    try {
+      // Create dates in UTC to avoid timezone shifts
+      const startOfDay = new Date(Date.UTC(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        0, 0, 0, 0
+      ))
+      const endOfDay = new Date(Date.UTC(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        23, 59, 59, 999
+      ))
+
+      console.log('Loading symptoms for date:', startOfDay.toISOString(), 'to', endOfDay.toISOString())
+      
+      const [symptoms, moods] = await Promise.all([
+        getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()),
+        getMoods(startOfDay.toISOString(), endOfDay.toISOString()),
+      ])
+      
+      console.log('Loaded symptoms:', symptoms)
+      console.log('Loaded moods:', moods)
+      
+      // Filter to exact date - compare dates without time
+      const dateYear = date.getFullYear()
+      const dateMonth = date.getMonth()
+      const dateDay = date.getDate()
+      
+      const filteredSymptoms = symptoms.filter(symptom => {
+        const symptomDate = new Date(symptom.date)
+        return symptomDate.getFullYear() === dateYear &&
+               symptomDate.getMonth() === dateMonth &&
+               symptomDate.getDate() === dateDay
+      })
+      
+      // Filter moods for exact date
+      const filteredMoods = moods.filter(mood => {
+        const moodDate = new Date(mood.date)
+        return moodDate.getFullYear() === dateYear &&
+               moodDate.getMonth() === dateMonth &&
+               moodDate.getDate() === dateDay
+      })
+      
+      console.log('Filtered symptoms:', filteredSymptoms)
+      console.log('Filtered moods:', filteredMoods)
+      setDaySymptoms(filteredSymptoms)
+      setDayMoods(filteredMoods)
+    } catch (error) {
+      console.error('Error loading day symptoms:', error)
+      setDaySymptoms([])
+      setDayMoods([])
+    }
   }
 
   const handleEditPeriod = () => {
     if (!editingPeriod) return
-    
     setNewPeriodDate(new Date(editingPeriod.startDate))
     setShowDatePicker(true)
   }
@@ -232,11 +365,7 @@ export default function CalendarScreen() {
     
     if (selectedDate) {
       setNewPeriodDate(selectedDate)
-      
-      if (Platform.OS === 'ios') {
-        // On iOS, we'll update immediately after user confirms
-      } else {
-        // On Android, update immediately
+      if (Platform.OS !== 'ios') {
         updatePeriodDate(selectedDate)
       }
     }
@@ -246,15 +375,25 @@ export default function CalendarScreen() {
     if (!editingPeriod) return
 
     try {
+      newDate.setHours(0, 0, 0, 0)
       const newDateString = newDate.toISOString()
       
-      // Calculate end date (keep the same period length)
+      // Calculate period length - use existing period length or settings
       const oldStart = new Date(editingPeriod.startDate)
       const oldEnd = editingPeriod.endDate ? new Date(editingPeriod.endDate) : oldStart
-      const periodLength = Math.ceil((oldEnd.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      oldStart.setHours(0, 0, 0, 0)
+      oldEnd.setHours(0, 0, 0, 0)
+      
+      let periodLength = Math.ceil((oldEnd.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      
+      // If period length seems wrong (e.g., 1 day), use settings default
+      if (periodLength < 2) {
+        periodLength = settings?.averagePeriodLength ?? 5
+      }
       
       const newEndDate = new Date(newDate)
       newEndDate.setDate(newEndDate.getDate() + periodLength - 1)
+      newEndDate.setHours(23, 59, 59, 999)
       
       await updatePeriod(editingPeriod.id, {
         startDate: newDateString,
@@ -263,10 +402,9 @@ export default function CalendarScreen() {
 
       setShowDayDetail(false)
       setShowDatePicker(false)
-      
-      // Reload data to update predictions
+      // Force refresh
+      setPeriods([])
       await loadData()
-      
       Alert.alert('Success', 'Period date updated successfully!')
     } catch (error: any) {
       console.error('Error updating period:', error)
@@ -281,10 +419,7 @@ export default function CalendarScreen() {
       'Delete Period',
       'Are you sure you want to delete this period?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
@@ -292,8 +427,13 @@ export default function CalendarScreen() {
             try {
               await deletePeriod(editingPeriod.id)
               setShowDayDetail(false)
+              // Force refresh by clearing state first
+              setPeriods([])
               await loadData()
-              Alert.alert('Success', 'Period deleted successfully!')
+              // Small delay to ensure state updates
+              setTimeout(() => {
+                Alert.alert('Success', 'Period deleted successfully!')
+              }, 100)
             } catch (error: any) {
               console.error('Error deleting period:', error)
               Alert.alert('Error', error.message || 'Failed to delete period')
@@ -304,40 +444,6 @@ export default function CalendarScreen() {
     )
   }
 
-  const getPeriodDayInfo = (date: Date, period: Period | null) => {
-    if (!period) return null
-    
-    const startDate = new Date(period.startDate)
-    startDate.setHours(0, 0, 0, 0)
-    const endDate = period.endDate ? new Date(period.endDate) : startDate
-    endDate.setHours(0, 0, 0, 0)
-    
-    date.setHours(0, 0, 0, 0)
-    
-    if (date < startDate || date > endDate) return null
-    
-    const diff = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
-    const dayNumber = diff + 1 // Day 1, 2, 3, etc.
-    
-    const periodLength = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
-    const isStart = dayNumber === 1
-    const isEnd = dayNumber === periodLength
-    const isMiddle = dayNumber > 1 && dayNumber < periodLength
-    
-    let dayLabel = ''
-    if (isStart) {
-      dayLabel = '1st day (Start)'
-    } else if (isMiddle) {
-      dayLabel = `${dayNumber}th day`
-    } else if (isEnd) {
-      dayLabel = `${dayNumber}th day (End)`
-    } else {
-      dayLabel = `${dayNumber}th day`
-    }
-    
-    return { dayNumber, dayLabel, periodLength, isStart, isMiddle, isEnd }
-  }
-
   const handleLogPeriod = async () => {
     if (!selectedDate) return
 
@@ -345,7 +451,6 @@ export default function CalendarScreen() {
       const date = new Date(selectedDate)
       date.setHours(0, 0, 0, 0)
 
-      // Check if there's already a period that overlaps
       const overlappingPeriod = periods.find((period) => {
         const start = new Date(period.startDate)
         start.setHours(0, 0, 0, 0)
@@ -355,17 +460,16 @@ export default function CalendarScreen() {
       })
 
       if (overlappingPeriod) {
-        // Already logged for this day
         Alert.alert('Already Logged', 'This day is already part of a logged period.')
         setShowDayDetail(false)
         return
       }
 
-      // Create new period starting on this date
-      // Default period length from settings
-      const periodLength = settings?.averagePeriodLength || 5
+      // Use user's average period length from settings, default to 5
+      const periodLength = settings?.averagePeriodLength ?? 5
       const endDate = new Date(date)
       endDate.setDate(endDate.getDate() + periodLength - 1)
+      endDate.setHours(23, 59, 59, 999) // End of day
 
       await createPeriod({
         startDate: date.toISOString(),
@@ -373,13 +477,12 @@ export default function CalendarScreen() {
         flowLevel: 'medium',
       })
 
-      // Reload data to refresh calendar and predictions
       await loadData()
       setShowDayDetail(false)
-      Alert.alert('Success', 'Period logged successfully! Your calendar has been updated.')
+      Alert.alert('Success', 'Period logged successfully!')
     } catch (error: any) {
       console.error('Error logging period:', error)
-      Alert.alert('Error', error.message || 'Failed to log period. Please try again.')
+      Alert.alert('Error', error.message || 'Failed to log period.')
     }
   }
 
@@ -393,11 +496,42 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
+        <View style={styles.headerDots}>
+          <View style={styles.dot} />
+          <View style={styles.dot} />
+          <View style={styles.dot} />
+        </View>
         <Text style={styles.headerTitle}>Calendar</Text>
-        <Text style={styles.headerSubtitle}>Track your cycle with confidence</Text>
       </View>
 
+      {/* Legend in corner */}
+      <View style={styles.legendCorner}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#FF69B4' }]} />
+          <Text style={styles.legendText}>Period</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#FFE066' }]} />
+          <Text style={styles.legendText}>Fertile</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#87CEEB' }]} />
+          <Text style={styles.legendText}>Predicted</Text>
+        </View>
+      </View>
+
+      {/* Day headers */}
+      <View style={styles.dayHeaders}>
+        {DAYS.map((day, index) => (
+          <View key={index} style={styles.dayHeader}>
+            <Text style={styles.dayHeaderText}>{day}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Scrollable calendar */}
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -405,85 +539,19 @@ export default function CalendarScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }
       >
-        <View style={styles.calendarContainer}>
-          <Calendar
-            markedDates={markedDates}
-            markingType="multi-dot"
-            onDayPress={handleDayPress}
-            theme={{
-              todayTextColor: Colors.primary,
-              selectedDayBackgroundColor: Colors.primary,
-              selectedDayTextColor: Colors.white,
-              arrowColor: Colors.primary,
-              monthTextColor: Colors.text,
-              textDayFontWeight: '500',
-              textMonthFontWeight: 'bold',
-              textDayHeaderFontWeight: '600',
-              textDayFontSize: 16,
-              textMonthFontSize: 18,
-              textDayHeaderFontSize: 13,
-            }}
-            style={styles.calendar}
-          />
-        </View>
-
-        <View style={styles.legendContainer}>
-          <Text style={styles.legendTitle}>Legend</Text>
-          
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: Colors.primary }]} />
-            <Text style={styles.legendText}>🩷 Period Days</Text>
-          </View>
-
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#4A90E2' }]} />
-            <Text style={styles.legendText}>💙 Fertile Window</Text>
-          </View>
-
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#FFD93D' }]} />
-            <Text style={styles.legendText}>💛 PMS Days</Text>
-          </View>
-
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#CCCCCC' }]} />
-            <Text style={styles.legendText}>⚪ Low Confidence Predictions</Text>
-          </View>
-
-          {predictions.nextPeriodDate && (
-            <View style={styles.predictionBox}>
-              <Text style={styles.predictionTitle}>Next Period Prediction</Text>
-              <Text style={styles.predictionDate}>
-                {new Date(predictions.nextPeriodDate).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Text>
-              <Text style={styles.predictionConfidence}>
-                Confidence: {predictions.confidence === 'high' ? 'High' : predictions.confidence === 'medium' ? 'Medium' : 'Low'}
-              </Text>
-              {predictions.confidence === 'low' && (
-                <Text style={styles.predictionHint}>
-                  Track more cycles to improve accuracy ✨
-                </Text>
-              )}
-            </View>
-          )}
+        <View key={calendarKey}>
+          {months.map((month) => renderMonth(month))}
         </View>
       </ScrollView>
 
-      {/* Day Detail Sheet */}
+      {/* Day Detail Modal */}
       <Modal
         visible={showDayDetail}
         transparent
         animationType="slide"
         onRequestClose={() => setShowDayDetail(false)}
       >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowDayDetail(false)}
-        >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowDayDetail(false)}>
           <Pressable style={styles.dayDetailSheet} onPress={(e) => e.stopPropagation()}>
             {selectedDayInfo && (
               <>
@@ -496,15 +564,16 @@ export default function CalendarScreen() {
                         day: 'numeric',
                       })}
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowDayDetail(false)}
-                    style={styles.closeButton}
-                  >
+                  <TouchableOpacity onPress={() => setShowDayDetail(false)} style={styles.closeButton}>
                     <Ionicons name="close" size={24} color={Colors.text} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.dayDetailContent}>
+                <ScrollView 
+                  style={styles.dayDetailContent}
+                  contentContainerStyle={styles.dayDetailContentContainer}
+                  showsVerticalScrollIndicator={false}
+                >
                   <View style={styles.phaseIndicator}>
                     <View
                       style={[
@@ -512,15 +581,11 @@ export default function CalendarScreen() {
                         {
                           backgroundColor:
                             selectedDayInfo.phase === 'period'
-                              ? Colors.primary
+                              ? '#FF69B4'
                               : selectedDayInfo.phase === 'fertile'
-                              ? '#4A90E2'
-                              : selectedDayInfo.phase === 'pms'
-                              ? '#FFD93D'
+                              ? '#FFE066'
                               : selectedDayInfo.phase === 'predicted_period'
-                              ? selectedDayInfo.confidence === 'low'
-                                ? '#CCCCCC'
-                                : Colors.primary
+                              ? selectedDayInfo.confidence === 'low' ? '#B0D4F1' : '#87CEEB'
                               : Colors.border,
                         },
                       ]}
@@ -530,31 +595,28 @@ export default function CalendarScreen() {
                         ? 'Period Day'
                         : selectedDayInfo.phase === 'fertile'
                         ? 'Fertile Window'
-                        : selectedDayInfo.phase === 'pms'
-                        ? 'PMS Phase'
                         : selectedDayInfo.phase === 'predicted_period'
                         ? 'Predicted Period'
                         : 'Normal Day'}
                     </Text>
                   </View>
 
+                  {/* Show period day info if it's a period day */}
                   {editingPeriod && selectedDate && (() => {
-                    const dayInfo = getPeriodDayInfo(new Date(selectedDate), editingPeriod)
-                    return dayInfo ? (
+                    const periodDayInfo = getPeriodDayInfo(new Date(selectedDate), periods)
+                    return periodDayInfo ? (
                       <View style={styles.periodDayInfo}>
                         <View style={styles.periodDayBadge}>
-                          <Text style={styles.periodDayText}>{dayInfo.dayLabel}</Text>
+                          <Text style={styles.periodDayText}>{periodDayInfo.dayLabel}</Text>
                         </View>
                         <Text style={styles.periodDaySubtext}>
-                          Day {dayInfo.dayNumber} of {dayInfo.periodLength} day period
+                          Day {periodDayInfo.dayNumber} of {periodDayInfo.periodLength} day period
                         </Text>
                       </View>
                     ) : null
                   })()}
 
-                  <Text style={styles.phaseNote}>
-                    {getPhaseNote(selectedDayInfo.phase)}
-                  </Text>
+                  <Text style={styles.phaseNote}>{getPhaseNote(selectedDayInfo.phase)}</Text>
 
                   {selectedDayInfo.isPredicted && (
                     <View style={styles.confidenceBadge}>
@@ -568,77 +630,158 @@ export default function CalendarScreen() {
                     </View>
                   )}
 
+                  {/* Moods Section */}
+                  {dayMoods.length > 0 && (
+                    <View style={styles.symptomsSection}>
+                      <Text style={styles.symptomsTitle}>Mood:</Text>
+                      <View style={styles.symptomsList}>
+                        {dayMoods.map((mood) => {
+                          const moodLabels: Record<string, { label: string; emoji: string }> = {
+                            calm: { label: 'Calm', emoji: '😌' },
+                            happy: { label: 'Happy', emoji: '😊' },
+                            energetic: { label: 'Energetic', emoji: '⚡' },
+                            frisky: { label: 'Frisky', emoji: '😏' },
+                            mood_swings: { label: 'Mood Swings', emoji: '😔' },
+                            irritated: { label: 'Irritated', emoji: '😠' },
+                            sad: { label: 'Sad', emoji: '😢' },
+                            anxious: { label: 'Anxious', emoji: '😰' },
+                            depressed: { label: 'Depressed', emoji: '😞' },
+                            feeling_guilty: { label: 'Feeling Guilty', emoji: '😔' },
+                            obsessive_thoughts: { label: 'Obsessive Thoughts', emoji: '☁️' },
+                            low_energy: { label: 'Low Energy', emoji: '🔋' },
+                            apathetic: { label: 'Apathetic', emoji: '😑' },
+                            confused: { label: 'Confused', emoji: '😕' },
+                            very_self_critical: { label: 'Very Self-Critical', emoji: '❗' },
+                          }
+                          const moodInfo = moodLabels[mood.type] || { label: mood.type, emoji: '📝' }
+                          return (
+                            <View key={mood.id} style={styles.symptomBadge}>
+                              <Text style={styles.symptomBadgeEmoji}>{moodInfo.emoji}</Text>
+                              <Text style={styles.symptomBadgeText}>{moodInfo.label}</Text>
+                            </View>
+                          )
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Symptoms Section */}
+                  {daySymptoms.length > 0 && (
+                    <View style={styles.symptomsSection}>
+                      <Text style={styles.symptomsTitle}>Symptoms logged:</Text>
+                      <View style={styles.symptomsList}>
+                        {daySymptoms.map((symptom) => {
+                          // Import symptom options for labels
+                          const symptomOption = symptomOptions.find(s => s.type === symptom.type)
+                          const symptomInfo = symptomOption 
+                            ? { label: symptomOption.label, emoji: symptomOption.emoji }
+                            : { label: symptom.type, emoji: '📝' }
+                          return (
+                            <View key={symptom.id} style={styles.symptomBadge}>
+                              <Text style={styles.symptomBadgeEmoji}>{symptomInfo.emoji}</Text>
+                              <Text style={styles.symptomBadgeText}>{symptomInfo.label}</Text>
+                            </View>
+                          )
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Log Symptom Button - Show for ANY date, but only if today or past with no data */}
+                  {selectedDate && (() => {
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    // Parse dateString (YYYY-MM-DD) to Date
+                    const [year, month, day] = selectedDate.split('-').map(Number)
+                    const selected = new Date(year, month - 1, day)
+                    selected.setHours(0, 0, 0, 0)
+                    const isToday = today.getTime() === selected.getTime()
+                    const isPast = selected.getTime() < today.getTime()
+                    const hasNoData = daySymptoms.length === 0 && dayMoods.length === 0
+                    
+                    if (isToday) {
+                      return (
+                        <TouchableOpacity
+                          style={styles.symptomButton}
+                          onPress={() => {
+                            setSymptomTrackerDate(selected)
+                            setShowSymptomTracker(true)
+                          }}
+                        >
+                          <Ionicons name="medical-outline" size={18} color={Colors.primary} />
+                          <Text style={styles.symptomButtonText}>
+                            {(daySymptoms.length > 0 || dayMoods.length > 0) ? 'Update Symptoms & Mood' : 'Add Symptoms & Mood'}
+                          </Text>
+                        </TouchableOpacity>
+                      )
+                    } else if (isPast && hasNoData) {
+                      return (
+                        <View style={styles.noSymptomsNote}>
+                          <Ionicons name="information-circle-outline" size={18} color={Colors.textSecondary} />
+                          <Text style={styles.noSymptomsText}>No symptoms or mood logged for this day</Text>
+                        </View>
+                      )
+                    } else if (isPast) {
+                      // Past date with data - allow editing
+                      return (
+                        <TouchableOpacity
+                          style={styles.symptomButton}
+                          onPress={() => {
+                            setSymptomTrackerDate(selected)
+                            setShowSymptomTracker(true)
+                          }}
+                        >
+                          <Ionicons name="medical-outline" size={18} color={Colors.primary} />
+                          <Text style={styles.symptomButtonText}>Edit Symptoms & Mood</Text>
+                        </TouchableOpacity>
+                      )
+                    }
+                    return null
+                  })()}
+
                   {editingPeriod && (
                     <View style={styles.editButtonsContainer}>
-                      <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={handleEditPeriod}
-                      >
+                      <TouchableOpacity style={styles.editButton} onPress={handleEditPeriod}>
                         <Ionicons name="create-outline" size={18} color={Colors.primary} />
                         <Text style={styles.editButtonText}>Edit Period Date</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={styles.deleteButton}
-                        onPress={handleDeletePeriod}
-                      >
+                      <TouchableOpacity style={styles.deleteButton} onPress={handleDeletePeriod}>
                         <Ionicons name="trash-outline" size={18} color={Colors.error} />
-                        <Text style={[styles.editButtonText, { color: Colors.error }]}>
-                          Delete Period
-                        </Text>
+                        <Text style={[styles.editButtonText, { color: Colors.error }]}>Delete Period</Text>
                       </TouchableOpacity>
                     </View>
                   )}
 
-                  {!editingPeriod ? (
-                    <TouchableOpacity
-                      style={styles.logButton}
-                      onPress={handleLogPeriod}
-                    >
+                  {!editingPeriod && (
+                    <TouchableOpacity style={styles.logButton} onPress={handleLogPeriod}>
                       <Ionicons name="add-circle-outline" size={20} color={Colors.white} />
-                      <Text style={styles.logButtonText}>
-                        {selectedDayInfo.phase === 'period' || selectedDayInfo.phase === 'predicted_period'
-                          ? 'Log Period Start'
-                          : 'Log Period or Symptom'}
-                      </Text>
+                      <Text style={styles.logButtonText}>Log Period</Text>
                     </TouchableOpacity>
-                  ) : null}
-                </View>
+                  )}
+                </ScrollView>
               </>
             )}
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* Date Picker Modal for Editing Period */}
+      {/* Date Picker */}
       {Platform.OS === 'ios' && showDatePicker && (
-        <Modal
-          visible={showDatePicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowDatePicker(false)}
-        >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => setShowDatePicker(false)}
-          >
+        <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
+          <Pressable style={styles.modalOverlay} onPress={() => setShowDatePicker(false)}>
             <Pressable style={styles.datePickerContainer} onPress={(e) => e.stopPropagation()}>
               <View style={styles.datePickerHeader}>
                 <Text style={styles.datePickerTitle}>Select New Period Date</Text>
                 <View style={styles.datePickerActions}>
-                  <TouchableOpacity
-                    onPress={() => setShowDatePicker(false)}
-                    style={styles.datePickerButton}
-                  >
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.datePickerButton}>
                     <Text style={styles.datePickerButtonText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => updatePeriodDate(newPeriodDate)}
                     style={[styles.datePickerButton, styles.datePickerButtonPrimary]}
                   >
-                    <Text style={[styles.datePickerButtonText, styles.datePickerButtonTextPrimary]}>
-                      Save
-                    </Text>
+                    <Text style={[styles.datePickerButtonText, styles.datePickerButtonTextPrimary]}>Save</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -654,7 +797,6 @@ export default function CalendarScreen() {
         </Modal>
       )}
 
-      {/* Android Date Picker */}
       {Platform.OS === 'android' && showDatePicker && (
         <DateTimePicker
           value={newPeriodDate}
@@ -664,6 +806,23 @@ export default function CalendarScreen() {
           maximumDate={new Date()}
         />
       )}
+
+      {/* Symptom Tracker Modal */}
+      {showSymptomTracker && (
+        <SymptomTracker
+          date={symptomTrackerDate}
+          onClose={() => {
+            setShowSymptomTracker(false)
+          }}
+          onSave={async () => {
+            // Reload data when symptoms are saved
+            if (selectedDate) {
+              await loadDaySymptoms(new Date(selectedDate))
+              await loadData()
+            }
+          }}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -671,36 +830,42 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
   },
   header: {
-    padding: 24,
-    backgroundColor: Colors.white,
+    paddingVertical: 16,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: '#F0F0F0',
+  },
+  headerDots: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#000000',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 4,
+    color: '#000000',
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  calendarContainer: {
-    backgroundColor: Colors.white,
-    margin: 16,
+  legendCorner: {
+    position: 'absolute',
+    top: 80,
+    right: 12,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 8,
     shadowColor: '#000',
@@ -708,71 +873,102 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  calendar: {
-    borderRadius: 8,
-  },
-  legendContainer: {
-    backgroundColor: Colors.white,
-    margin: 16,
-    marginTop: 8,
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  legendTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 16,
+    zIndex: 10,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
   legendText: {
-    fontSize: 15,
-    color: Colors.text,
+    fontSize: 10,
+    color: '#666',
+    fontWeight: '500',
   },
-  predictionBox: {
-    marginTop: 16,
-    padding: 16,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
+  dayHeaders: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
   },
-  predictionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginBottom: 4,
+  dayHeader: {
+    flex: 1,
+    alignItems: 'center',
   },
-  predictionDate: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.primary,
-    marginBottom: 4,
-  },
-  predictionConfidence: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  predictionHint: {
+  dayHeaderText: {
     fontSize: 12,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 4,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  monthContainer: {
+    paddingHorizontal: 12,
+    marginBottom: 32,
+  },
+  monthTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#999999',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  dayText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  periodDay: {
+    backgroundColor: '#FF69B4',
+  },
+  periodText: {
+    color: '#FFFFFF',
+  },
+  periodFirst: {
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+  },
+  periodLast: {
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  periodSingle: {
+    borderRadius: 20,
+  },
+  fertileDay: {
+    backgroundColor: '#FFE066',
+  },
+  predictedDay: {
+    backgroundColor: '#87CEEB',
+  },
+  predictedLowDay: {
+    backgroundColor: '#B0D4F1',
+  },
+  dotIndicator: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+    position: 'absolute',
+    bottom: 4,
   },
   modalOverlay: {
     flex: 1,
@@ -784,15 +980,16 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 24,
-    paddingHorizontal: 24,
+    maxHeight: '85%',
     paddingBottom: 40,
-    maxHeight: '70%',
+    minHeight: 400,
   },
   dayDetailHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
+    paddingHorizontal: 24,
   },
   dayDetailTitle: {
     fontSize: 22,
@@ -804,12 +1001,21 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   dayDetailContent: {
-    gap: 20,
+    flex: 1,
+  },
+  dayDetailContentContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   phaseIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   phaseDot: {
     width: 24,
@@ -818,13 +1024,14 @@ const styles = StyleSheet.create({
   },
   phaseText: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.text,
   },
   phaseNote: {
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.textSecondary,
-    lineHeight: 24,
+    lineHeight: 22,
+    marginBottom: 16,
   },
   confidenceBadge: {
     alignSelf: 'flex-start',
@@ -839,72 +1046,169 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   periodDayInfo: {
-    marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: 'rgba(255, 107, 157, 0.08)',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
   },
   periodDayBadge: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 20,
     alignSelf: 'flex-start',
     marginBottom: 8,
   },
   periodDayText: {
     color: Colors.white,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   periodDaySubtext: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+    fontSize: 15,
+    color: Colors.text,
     marginTop: 4,
+    fontWeight: '500',
+  },
+  symptomsSection: {
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+  },
+  symptomsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  symptomsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  symptomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  symptomBadgeEmoji: {
+    fontSize: 18,
+  },
+  symptomBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  symptomButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  symptomButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  noSymptomsNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: Colors.surface,
+  },
+  noSymptomsText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   logButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primary,
-    padding: 16,
+    padding: 18,
     borderRadius: 12,
     gap: 8,
-    marginTop: 8,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4,
   },
   logButtonText: {
     color: Colors.white,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
   editButtonsContainer: {
     gap: 12,
-    marginTop: 8,
+    marginTop: 16,
   },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.white,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Colors.primary,
-    padding: 14,
+    padding: 16,
     borderRadius: 12,
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.white,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Colors.error,
-    padding: 14,
+    padding: 16,
     borderRadius: 12,
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   editButtonText: {
     color: Colors.primary,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
   },
   datePickerContainer: {
     backgroundColor: Colors.white,
@@ -913,7 +1217,6 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingHorizontal: 24,
     paddingBottom: 40,
-    maxHeight: '50%',
   },
   datePickerHeader: {
     marginBottom: 20,

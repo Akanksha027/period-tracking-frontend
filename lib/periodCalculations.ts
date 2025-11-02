@@ -248,24 +248,6 @@ export function getDayInfo(
 }
 
 /**
- * Get a supportive hormonal mood note for a phase
- */
-export function getPhaseNote(phase: CyclePhase): string {
-  switch (phase) {
-    case 'period':
-      return "Rest and be gentle with yourself. Your body is working hard 💕"
-    case 'fertile':
-      return "You're in your fertile window! Energy may be higher 🌟"
-    case 'pms':
-      return "Premenstrual phase - mood changes are normal and valid 🫶"
-    case 'predicted_period':
-      return "Predicted period day - listen to what your body needs"
-    default:
-      return "You're doing great! Keep tracking to know your cycle better ✨"
-  }
-}
-
-/**
  * Get period day information (what day of period are you on)
  */
 export function getPeriodDayInfo(date: Date, periods: Period[]): {
@@ -319,6 +301,24 @@ export function getPeriodDayInfo(date: Date, periods: Period[]): {
     isStart: dayNumber === 1,
     isMiddle: dayNumber > 1 && dayNumber < periodLength,
     isEnd: dayNumber === periodLength,
+  }
+}
+
+/**
+ * Get a supportive hormonal mood note for a phase
+ */
+export function getPhaseNote(phase: CyclePhase): string {
+  switch (phase) {
+    case 'period':
+      return "Rest and be gentle with yourself. Your body is working hard 💕"
+    case 'fertile':
+      return "You're in your fertile window! Energy may be higher 🌟"
+    case 'pms':
+      return "Premenstrual phase - mood changes are normal and valid 🫶"
+    case 'predicted_period':
+      return "Predicted period day - listen to what your body needs"
+    default:
+      return "You're doing great! Keep tracking to know your cycle better ✨"
   }
 }
 

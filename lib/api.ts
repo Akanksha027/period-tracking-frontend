@@ -212,6 +212,11 @@ export const createSymptom = async (data: {
   return response.data
 }
 
+export const deleteSymptom = async (id: string) => {
+  const response = await api.delete(`/api/symptoms/${id}`)
+  return response.data
+}
+
 // Mood API
 export const getMoods = async (startDate?: string, endDate?: string): Promise<Mood[]> => {
   const params = new URLSearchParams()
@@ -226,6 +231,11 @@ export const createMood = async (data: {
   type: string
 }): Promise<Mood> => {
   const response = await api.post('/api/moods', data)
+  return response.data
+}
+
+export const deleteMood = async (id: string) => {
+  const response = await api.delete(`/api/moods/${id}`)
   return response.data
 }
 
