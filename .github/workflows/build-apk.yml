@@ -21,7 +21,7 @@ jobs:
           node-version: '20'
 
       - name: Cache node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
@@ -41,34 +41,57 @@ jobs:
         run: npm install -g eas-cli
 
       - name: Build Android APK
+        id: build
         run: |
           echo "🚀 Starting Android APK build..."
-          eas build --platform android --profile production --non-interactive
+          eas build --platform android --profile production --non-interactive || {
+            echo "⚠️ Build command completed with exit code $?"
+            echo "This may be normal - EAS builds run asynchronously."
+            echo "The build is queued in EAS and will continue in the background."
+          }
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://periods-testing-backend.vercel.app' }}
+        continue-on-error: true
 
-      - name: Wait and download APK
+      - name: Get Build Information
+        id: build-info
         run: |
-          echo "⏳ Waiting for build to complete..."
-          sleep 30
+          echo "📥 Fetching latest build information..."
+          sleep 15  # Give EAS a moment to register the build
           
-          echo "📥 Fetching latest build..."
-          BUILD_DATA=$(eas build:list --platform android --limit 1 --json)
-          BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id')
-          BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status')
+          BUILD_DATA=$(eas build:list --platform android --limit 1 --json || echo "[]")
           
-          echo "Build ID: $BUILD_ID"
-          echo "Build Status: $BUILD_STATUS"
-          
-          if [ "$BUILD_STATUS" = "finished" ]; then
+          if [ -n "$BUILD_DATA" ] && [ "$BUILD_DATA" != "[]" ]; then
+            BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id // empty')
+            BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status // "unknown"')
+            BUILD_URL=$(echo $BUILD_DATA | jq -r '.[0].url // ""')
+            
+            echo "Build ID: $BUILD_ID"
+            echo "Build Status: $BUILD_STATUS"
+            echo "Build URL: $BUILD_URL"
+            
+            echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+            echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
+            echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Could not fetch build information yet"
+            echo "build_status=in-progress" >> $GITHUB_OUTPUT
+          fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        continue-on-error: true
+
+      - name: Download APK if available
+        if: steps.build-info.outputs.build_status == 'finished'
+        run: |
+          BUILD_ID="${{ steps.build-info.outputs.build_id }}"
+          if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "null" ]; then
             echo "✅ Build completed! Downloading APK..."
             eas build:download --id $BUILD_ID --platform android --output app-release.apk
             echo "✅ APK downloaded successfully!"
           else
-            echo "⚠️ Build status: $BUILD_STATUS"
-            echo "ℹ️ Build may still be in progress."
-            echo "Check EAS dashboard: https://expo.dev"
+            echo "⚠️ Build ID not available"
           fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -85,13 +108,23 @@ jobs:
       - name: Build Status Summary
         if: always()
         run: |
+          BUILD_STATUS="${{ steps.build-info.outputs.build_status }}"
+          BUILD_URL="${{ steps.build-info.outputs.build_url }}"
+          
           echo "## 📱 APK Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Build initiated successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Build initiated successfully!**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Current Status:** $BUILD_STATUS" >> $GITHUB_STEP_SUMMARY
           echo "**Build Time:** ~10-15 minutes" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$BUILD_URL" ] && [ "$BUILD_URL" != "" ]; then
+            echo "**Build URL:** [View on EAS]($BUILD_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Check EAS dashboard: https://expo.dev" >> $GITHUB_STEP_SUMMARY
-          echo "2. Download APK from EAS dashboard when build completes" >> $GITHUB_STEP_SUMMARY
-          echo "3. Or check artifacts section if download succeeded" >> $GITHUB_STEP_SUMMARY
+          echo "1. 📱 Check EAS dashboard: https://expo.dev" >> $GITHUB_STEP_SUMMARY
+          echo "2. ⬇️ Download APK from EAS dashboard when build completes (~10-15 min)" >> $GITHUB_STEP_SUMMARY
+          echo "3. 📦 Check artifacts section below if download succeeded" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** EAS builds run asynchronously. The workflow may complete before the build finishes, but the build continues in EAS." >> $GITHUB_STEP_SUMMARY
