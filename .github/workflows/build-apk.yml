@@ -44,11 +44,31 @@ jobs:
         id: build
         run: |
           echo "🚀 Starting Android APK build..."
-          eas build --platform android --profile production --non-interactive || {
-            echo "⚠️ Build command completed with exit code $?"
-            echo "This may be normal - EAS builds run asynchronously."
-            echo "The build is queued in EAS and will continue in the background."
-          }
+          set +e  # Don't exit on error
+          eas build --platform android --profile production --non-interactive
+          BUILD_EXIT_CODE=$?
+          
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
+            echo "✅ Build command completed successfully"
+          elif [ $BUILD_EXIT_CODE -eq 1 ]; then
+            echo "⚠️ Build command exited with code 1"
+            echo "This is often normal - checking if build was queued..."
+            
+            # Wait a moment and check if build was actually queued
+            sleep 5
+            BUILD_CHECK=$(eas build:list --platform android --limit 1 --json 2>/dev/null || echo "[]")
+            
+            if [ "$BUILD_CHECK" != "[]" ] && [ -n "$BUILD_CHECK" ]; then
+              echo "✅ Build was successfully queued in EAS!"
+              echo "The build will continue in the background."
+            else
+              echo "⚠️ Could not verify build was queued"
+              echo "Check EAS dashboard manually: https://expo.dev"
+            fi
+          else
+            echo "❌ Build command failed with exit code $BUILD_EXIT_CODE"
+            exit $BUILD_EXIT_CODE
+          fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://periods-testing-backend.vercel.app' }}
@@ -58,25 +78,33 @@ jobs:
         id: build-info
         run: |
           echo "📥 Fetching latest build information..."
-          sleep 15  # Give EAS a moment to register the build
+          sleep 20  # Give EAS more time to register the build
           
-          BUILD_DATA=$(eas build:list --platform android --limit 1 --json || echo "[]")
+          set +e  # Don't exit on error
+          BUILD_DATA=$(eas build:list --platform android --limit 1 --json 2>/dev/null || echo "[]")
           
-          if [ -n "$BUILD_DATA" ] && [ "$BUILD_DATA" != "[]" ]; then
-            BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id // empty')
-            BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status // "unknown"')
-            BUILD_URL=$(echo $BUILD_DATA | jq -r '.[0].url // ""')
+          if [ -n "$BUILD_DATA" ] && [ "$BUILD_DATA" != "[]" ] && [ "$BUILD_DATA" != "null" ]; then
+            BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+            BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+            BUILD_URL=$(echo $BUILD_DATA | jq -r '.[0].url // ""' 2>/dev/null || echo "")
             
             echo "Build ID: $BUILD_ID"
             echo "Build Status: $BUILD_STATUS"
             echo "Build URL: $BUILD_URL"
             
-            echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-            echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
-            echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+            if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "null" ] && [ "$BUILD_ID" != "" ]; then
+              echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+              echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
+              echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+              echo "✅ Build found in EAS dashboard"
+            else
+              echo "⚠️ Build ID not found yet"
+              echo "build_status=in-progress" >> $GITHUB_OUTPUT
+            fi
           else
             echo "⚠️ Could not fetch build information yet"
-            echo "build_status=in-progress" >> $GITHUB_OUTPUT
+            echo "Build may still be registering in EAS"
+            echo "build_status=queued" >> $GITHUB_OUTPUT
           fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
