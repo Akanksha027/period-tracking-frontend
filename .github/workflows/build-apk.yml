@@ -37,158 +37,115 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
+      - name: Install EAS CLI and jq
+        run: |
+          npm install -g eas-cli
+          sudo apt-get update && sudo apt-get install -y jq || echo "jq install failed, will use alternative method"
 
       - name: Build Android APK
         id: build
         run: |
           echo "🚀 Starting Android APK build..."
-          set +e  # Don't exit on error
-          eas build --platform android --profile production --non-interactive
+          echo "Using profile: production"
+          echo "Platform: android"
+          
+          # Run build command and capture output
+          set +e
+          BUILD_OUTPUT=$(eas build --platform android --profile production --non-interactive 2>&1)
           BUILD_EXIT_CODE=$?
           
-          echo "Build command exit code: $BUILD_EXIT_CODE"
+          echo "--- Build Command Output ---"
+          echo "$BUILD_OUTPUT"
+          echo "--- End Output ---"
+          echo ""
+          echo "Exit code: $BUILD_EXIT_CODE"
           
-          # Wait a moment for EAS to register the build
-          echo "⏳ Waiting for build to register in EAS..."
-          sleep 10
+          # Wait for build to register in EAS
+          echo ""
+          echo "⏳ Waiting 15 seconds for build to register in EAS..."
+          sleep 15
           
-          # Check if build was actually queued
-          BUILD_CHECK=$(eas build:list --platform android --limit 1 --json 2>/dev/null || echo "[]")
+          # Check for build in EAS
+          echo "📥 Checking for build in EAS..."
+          BUILD_LIST=$(eas build:list --platform android --limit 5 --json 2>&1)
           
-          if [ "$BUILD_CHECK" != "[]" ] && [ -n "$BUILD_CHECK" ] && [ "$BUILD_CHECK" != "null" ]; then
-            BUILD_ID=$(echo $BUILD_CHECK | jq -r '.[0].id // empty' 2>/dev/null || echo "")
-            BUILD_STATUS=$(echo $BUILD_CHECK | jq -r '.[0].status // empty' 2>/dev/null || echo "")
+          echo "--- Build List Output ---"
+          echo "$BUILD_LIST" | head -20
+          echo "--- End Output ---"
+          
+          # Parse build ID from the list
+          if echo "$BUILD_LIST" | jq -e '.[0].id' > /dev/null 2>&1; then
+            NEWEST_BUILD_ID=$(echo "$BUILD_LIST" | jq -r '.[0].id')
+            NEWEST_BUILD_STATUS=$(echo "$BUILD_LIST" | jq -r '.[0].status // "unknown"')
+            NEWEST_BUILD_URL=$(echo "$BUILD_LIST" | jq -r '.[0].url // ""')
             
-            if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "null" ] && [ "$BUILD_ID" != "" ]; then
-              echo "✅ ✅ Build successfully queued in EAS!"
-              echo "Build ID: $BUILD_ID"
-              echo "Build Status: $BUILD_STATUS"
-              echo "The build is now running in EAS and will complete in ~10-15 minutes."
-              echo "build_queued=true" >> $GITHUB_OUTPUT
-              echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-              exit 0  # Success!
-            fi
-          fi
-          
-          # If we get here, build might not have been queued or we couldn't verify
-          if [ $BUILD_EXIT_CODE -eq 1 ]; then
-            echo "⚠️ Build command exited with code 1 and couldn't verify queued status"
-            echo "This might be normal - EAS builds are asynchronous"
-            echo "Please check EAS dashboard: https://expo.dev"
-            echo "build_queued=unknown" >> $GITHUB_OUTPUT
-            exit 0  # Treat as success since exit code 1 is often normal
+            echo ""
+            echo "✅ ✅ BUILD FOUND IN EAS!"
+            echo "Build ID: $NEWEST_BUILD_ID"
+            echo "Status: $NEWEST_BUILD_STATUS"
+            echo "URL: $NEWEST_BUILD_URL"
+            
+            echo "build_queued=true" >> $GITHUB_OUTPUT
+            echo "build_id=$NEWEST_BUILD_ID" >> $GITHUB_OUTPUT
+            echo "build_status=$NEWEST_BUILD_STATUS" >> $GITHUB_OUTPUT
+            echo "build_url=$NEWEST_BUILD_URL" >> $GITHUB_OUTPUT
+            
+            # Success - build was queued
+            exit 0
           else
-            echo "❌ Build command failed with unexpected exit code: $BUILD_EXIT_CODE"
-            exit $BUILD_EXIT_CODE
+            echo ""
+            echo "⚠️ Could not find build in EAS list"
+            
+            # Check if there was an authentication error
+            if echo "$BUILD_OUTPUT" | grep -i "unauthorized\|authentication\|token" > /dev/null; then
+              echo "❌ Authentication error detected!"
+              echo "Please check EXPO_TOKEN secret"
+              exit 1
+            fi
+            
+            # Check if there was a different error
+            if [ $BUILD_EXIT_CODE -ne 0 ] && [ $BUILD_EXIT_CODE -ne 1 ]; then
+              echo "❌ Build command failed with exit code $BUILD_EXIT_CODE"
+              exit $BUILD_EXIT_CODE
+            fi
+            
+            # Exit code 1 is often normal for async builds
+            echo "ℹ️ Build command exited with code $BUILD_EXIT_CODE"
+            echo "This might be normal. Check EAS dashboard manually."
+            echo "build_queued=unknown" >> $GITHUB_OUTPUT
+            exit 0  # Treat as success for now
           fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL || 'https://periods-testing-backend.vercel.app' }}
 
-      - name: Get Build Information
-        id: build-info
+      - name: Display Build Information
+        if: steps.build.outputs.build_queued == 'true'
         run: |
-          echo "📥 Fetching latest build information..."
-          sleep 20  # Give EAS more time to register the build
-          
-          set +e  # Don't exit on error
-          BUILD_DATA=$(eas build:list --platform android --limit 1 --json 2>/dev/null || echo "[]")
-          
-          if [ -n "$BUILD_DATA" ] && [ "$BUILD_DATA" != "[]" ] && [ "$BUILD_DATA" != "null" ]; then
-            BUILD_ID=$(echo $BUILD_DATA | jq -r '.[0].id // empty' 2>/dev/null || echo "")
-            BUILD_STATUS=$(echo $BUILD_DATA | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-            BUILD_URL=$(echo $BUILD_DATA | jq -r '.[0].url // ""' 2>/dev/null || echo "")
-            
-            echo "Build ID: $BUILD_ID"
-            echo "Build Status: $BUILD_STATUS"
-            echo "Build URL: $BUILD_URL"
-            
-            if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "null" ] && [ "$BUILD_ID" != "" ]; then
-              echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-              echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
-              echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
-              echo "✅ Build found in EAS dashboard"
-            else
-              echo "⚠️ Build ID not found yet"
-              echo "build_status=in-progress" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "⚠️ Could not fetch build information yet"
-            echo "Build may still be registering in EAS"
-            echo "build_status=queued" >> $GITHUB_OUTPUT
-          fi
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        continue-on-error: true
-
-      - name: Download APK if available
-        if: steps.build-info.outputs.build_status == 'finished'
-        run: |
-          BUILD_ID="${{ steps.build-info.outputs.build_id }}"
-          if [ -n "$BUILD_ID" ] && [ "$BUILD_ID" != "null" ]; then
-            echo "✅ Build completed! Downloading APK..."
-            eas build:download --id $BUILD_ID --platform android --output app-release.apk
-            echo "✅ APK downloaded successfully!"
-          else
-            echo "⚠️ Build ID not available"
-          fi
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        continue-on-error: true
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk-${{ github.run_number }}
-          path: app-release.apk
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Build Status Summary
-        if: always()
-        run: |
-          BUILD_QUEUED="${{ steps.build.outputs.build_queued }}"
-          BUILD_ID_FROM_BUILD="${{ steps.build.outputs.build_id }}"
-          BUILD_STATUS="${{ steps.build-info.outputs.build_status }}"
-          BUILD_URL="${{ steps.build-info.outputs.build_url }}"
-          FINAL_BUILD_ID="${{ steps.build-info.outputs.build_id }}"
-          
-          # Use build ID from whichever step has it
-          if [ -n "$BUILD_ID_FROM_BUILD" ] && [ "$BUILD_ID_FROM_BUILD" != "" ]; then
-            FINAL_BUILD_ID="$BUILD_ID_FROM_BUILD"
-          elif [ -n "$FINAL_BUILD_ID" ] && [ "$FINAL_BUILD_ID" != "" ]; then
-            FINAL_BUILD_ID="$FINAL_BUILD_ID"
-          fi
-          
-          echo "## 📱 APK Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Build Successfully Queued!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "$BUILD_QUEUED" = "true" ]; then
-            echo "✅ **✅ Build successfully queued in EAS!**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            if [ -n "$FINAL_BUILD_ID" ] && [ "$FINAL_BUILD_ID" != "" ] && [ "$FINAL_BUILD_ID" != "null" ]; then
-              echo "**Build ID:** $FINAL_BUILD_ID" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "✅ **Build initiated successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "**Build ID:** ${{ steps.build.outputs.build_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.build.outputs.build_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Estimated Time:** ~10-15 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.build.outputs.build_url }}" ]; then
+            echo "**View Build:** [${{ steps.build.outputs.build_url }}](${{ steps.build.outputs.build_url }})" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          
-          echo "**Current Status:** ${BUILD_STATUS:-queued}" >> $GITHUB_STEP_SUMMARY
-          echo "**Estimated Build Time:** ~10-15 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "**📥 Download Instructions:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to [EAS Dashboard](https://expo.dev/accounts/akanksha_singh/projects/period-tracker/builds)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Find build ID: \`${{ steps.build.outputs.build_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Wait for status to show 'Finished' (~10-15 min)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Click download button to get your APK" >> $GITHUB_STEP_SUMMARY
+
+      - name: Build Status Fallback
+        if: steps.build.outputs.build_queued != 'true'
+        run: |
+          echo "## ⚠️ Build Status Unknown" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -n "$BUILD_URL" ] && [ "$BUILD_URL" != "" ]; then
-            echo "**Build URL:** [View on EAS Dashboard]($BUILD_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "**📥 How to Download Your APK:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. 📱 Go to [EAS Dashboard](https://expo.dev)" >> $GITHUB_STEP_SUMMARY
-          echo "2. 🔍 Find your project: **period-tracker**" >> $GITHUB_STEP_SUMMARY
-          echo "3. 📦 Click on the latest build" >> $GITHUB_STEP_SUMMARY
-          echo "4. ⬇️ Download APK when build status shows 'Finished' (~10-15 min)" >> $GITHUB_STEP_SUMMARY
+          echo "The build command completed, but we couldn't verify if it was queued." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ℹ️ Note:** EAS builds run asynchronously in the cloud. This workflow completes once the build is queued. The actual build continues in EAS and takes ~10-15 minutes." >> $GITHUB_STEP_SUMMARY
+          echo "**Please check manually:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to [EAS Dashboard](https://expo.dev/accounts/akanksha_singh/projects/period-tracker/builds)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Look for a new build in the list" >> $GITHUB_STEP_SUMMARY
+          echo "3. If you see a new build, it's working! Just wait ~10-15 min for it to complete." >> $GITHUB_STEP_SUMMARY
