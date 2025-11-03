@@ -212,8 +212,7 @@ export default function CalendarScreen() {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day)
       date.setHours(0, 0, 0, 0)
-      // Create date string in YYYY-MM-DD format without timezone conversion
-      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      const dateString = date.toISOString().split('T')[0]
       const status = getDayStatus(date)
       
       let containerStyle: any[] = [styles.dayCell]
@@ -288,28 +287,15 @@ export default function CalendarScreen() {
     setSelectedDayInfo(dayInfo)
     setEditingPeriod(periodForDay || null)
     setShowDayDetail(true)
-    // Parse dateString back to Date object for loading symptoms
-    const [year, month, day] = dateString.split('-').map(Number)
-    const dateForLoading = new Date(year, month - 1, day)
-    setSymptomTrackerDate(dateForLoading)
-    loadDaySymptoms(dateForLoading)
+    loadDaySymptoms(date)
   }
 
   const loadDaySymptoms = async (date: Date) => {
     try {
-      // Create dates in UTC to avoid timezone shifts
-      const startOfDay = new Date(Date.UTC(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        0, 0, 0, 0
-      ))
-      const endOfDay = new Date(Date.UTC(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-        23, 59, 59, 999
-      ))
+      const startOfDay = new Date(date)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(date)
+      endOfDay.setHours(23, 59, 59, 999)
 
       console.log('Loading symptoms for date:', startOfDay.toISOString(), 'to', endOfDay.toISOString())
       
@@ -321,24 +307,20 @@ export default function CalendarScreen() {
       console.log('Loaded symptoms:', symptoms)
       console.log('Loaded moods:', moods)
       
-      // Filter to exact date - compare dates without time
-      const dateYear = date.getFullYear()
-      const dateMonth = date.getMonth()
-      const dateDay = date.getDate()
-      
+      // Filter to ensure we only show symptoms for this exact date
       const filteredSymptoms = symptoms.filter(symptom => {
         const symptomDate = new Date(symptom.date)
-        return symptomDate.getFullYear() === dateYear &&
-               symptomDate.getMonth() === dateMonth &&
-               symptomDate.getDate() === dateDay
+        symptomDate.setHours(0, 0, 0, 0)
+        return symptomDate.getTime() >= startOfDay.getTime() && 
+               symptomDate.getTime() <= endOfDay.getTime()
       })
       
       // Filter moods for exact date
       const filteredMoods = moods.filter(mood => {
         const moodDate = new Date(mood.date)
-        return moodDate.getFullYear() === dateYear &&
-               moodDate.getMonth() === dateMonth &&
-               moodDate.getDate() === dateDay
+        moodDate.setHours(0, 0, 0, 0)
+        return moodDate.getTime() >= startOfDay.getTime() && 
+               moodDate.getTime() <= endOfDay.getTime()
       })
       
       console.log('Filtered symptoms:', filteredSymptoms)
@@ -448,7 +430,9 @@ export default function CalendarScreen() {
     if (!selectedDate) return
 
     try {
-      const date = new Date(selectedDate)
+      // Parse date string (YYYY-MM-DD) in local timezone to avoid UTC conversion issues
+      const [year, month, day] = selectedDate.split('-').map(Number)
+      const date = new Date(year, month - 1, day)
       date.setHours(0, 0, 0, 0)
 
       const overlappingPeriod = periods.find((period) => {
@@ -557,12 +541,16 @@ export default function CalendarScreen() {
               <>
                 <View style={styles.dayDetailHeader}>
                   <Text style={styles.dayDetailTitle}>
-                    {selectedDate &&
-                      new Date(selectedDate).toLocaleDateString('en-US', {
+                    {selectedDate && (() => {
+                      // Parse date string in local timezone to avoid UTC conversion issues
+                      const [year, month, day] = selectedDate.split('-').map(Number)
+                      const date = new Date(year, month - 1, day)
+                      return date.toLocaleDateString('en-US', {
                         weekday: 'long',
                         month: 'long',
                         day: 'numeric',
-                      })}
+                      })
+                    })()}
                   </Text>
                   <TouchableOpacity onPress={() => setShowDayDetail(false)} style={styles.closeButton}>
                     <Ionicons name="close" size={24} color={Colors.text} />
@@ -603,7 +591,10 @@ export default function CalendarScreen() {
 
                   {/* Show period day info if it's a period day */}
                   {editingPeriod && selectedDate && (() => {
-                    const periodDayInfo = getPeriodDayInfo(new Date(selectedDate), periods)
+                    // Parse date string in local timezone to avoid UTC conversion issues
+                    const [year, month, day] = selectedDate.split('-').map(Number)
+                    const date = new Date(year, month - 1, day)
+                    const periodDayInfo = getPeriodDayInfo(date, periods)
                     return periodDayInfo ? (
                       <View style={styles.periodDayInfo}>
                         <View style={styles.periodDayBadge}>
@@ -691,7 +682,7 @@ export default function CalendarScreen() {
                   {selectedDate && (() => {
                     const today = new Date()
                     today.setHours(0, 0, 0, 0)
-                    // Parse dateString (YYYY-MM-DD) to Date
+                    // Parse date string in local timezone to avoid UTC conversion issues
                     const [year, month, day] = selectedDate.split('-').map(Number)
                     const selected = new Date(year, month - 1, day)
                     selected.setHours(0, 0, 0, 0)
@@ -817,7 +808,10 @@ export default function CalendarScreen() {
           onSave={async () => {
             // Reload data when symptoms are saved
             if (selectedDate) {
-              await loadDaySymptoms(new Date(selectedDate))
+              // Parse date string in local timezone to avoid UTC conversion issues
+              const [year, month, day] = selectedDate.split('-').map(Number)
+              const date = new Date(year, month - 1, day)
+              await loadDaySymptoms(date)
               await loadData()
             }
           }}
