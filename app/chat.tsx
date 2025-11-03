@@ -114,28 +114,28 @@ export default function ChatScreen() {
 
   // Function to render text with clickable links
   const renderMessageWithLinks = (text: string, isUser: boolean) => {
-    // Regex to match URLs (http, https, deep links like swiggy://, zomato://, etc.)
-    const urlRegex = /(https?:\/\/[^\s]+|swiggy:\/\/[^\s]+|zomato:\/\/[^\s]+|bigbasket:\/\/[^\s]+|zepto:\/\/[^\s]+|blinkit:\/\/[^\s]+)/gi
+    // Regex to match web URLs (http, https)
+    const urlRegex = /(https?:\/\/[^\s\)]+)/gi
     const parts = text.split(urlRegex)
     
     return (
       <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.assistantMessageText]}>
         {parts.map((part, index) => {
           if (urlRegex.test(part)) {
-            // Extract app name from deep link for display
+            // Extract app/service name from URL for display
             let displayText = part
-            if (part.includes('swiggy://')) {
-              displayText = 'Open Swiggy Instamart →'
-            } else if (part.includes('zomato://')) {
-              displayText = 'Open Zomato →'
-            } else if (part.includes('bigbasket')) {
-              displayText = 'Open BigBasket →'
-            } else if (part.includes('zepto://')) {
-              displayText = 'Open Zepto →'
-            } else if (part.includes('blinkit://')) {
-              displayText = 'Open Blinkit →'
-            } else if (part.startsWith('http')) {
-              displayText = 'Open Link →'
+            if (part.includes('swiggy.com')) {
+              displayText = 'Swiggy Instamart'
+            } else if (part.includes('zomato.com')) {
+              displayText = 'Zomato'
+            } else if (part.includes('bigbasket.com')) {
+              displayText = 'BigBasket'
+            } else if (part.includes('zepto')) {
+              displayText = 'Zepto'
+            } else if (part.includes('blinkit')) {
+              displayText = 'Blinkit'
+            } else {
+              displayText = 'Open Link'
             }
             
             return (
@@ -145,10 +145,6 @@ export default function ChatScreen() {
                 onPress={() => {
                   Linking.openURL(part).catch((err) => {
                     console.error('Failed to open URL:', err)
-                    // Fallback: try opening as web URL if deep link fails
-                    if (part.startsWith('http')) {
-                      Linking.openURL(part)
-                    }
                   })
                 }}
               >
