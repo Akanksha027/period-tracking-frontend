@@ -644,7 +644,7 @@ export default function CalendarScreen() {
                             selectedDayInfo.phase === 'period'
                               ? '#FF69B4'
                               : selectedDayInfo.phase === 'fertile'
-                              ? '#FFE066'
+                              ? '#87CEEB'
                               : selectedDayInfo.phase === 'predicted_period'
                               ? selectedDayInfo.confidence === 'low' ? '#B0D4F1' : '#87CEEB'
                               : Colors.border,
