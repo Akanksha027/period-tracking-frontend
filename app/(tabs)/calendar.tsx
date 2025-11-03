@@ -594,9 +594,8 @@ export default function CalendarScreen() {
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         removeClippedSubviews={true}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={10}
+        decelerationRate="normal"
+        bounces={true}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }
