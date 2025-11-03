@@ -212,7 +212,8 @@ export default function CalendarScreen() {
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day)
       date.setHours(0, 0, 0, 0)
-      const dateString = date.toISOString().split('T')[0]
+      // Create dateString in local timezone to avoid UTC conversion issues
+      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
       const status = getDayStatus(date)
       
       let containerStyle: any[] = [styles.dayCell]
