@@ -46,7 +46,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: 30000, // Increased timeout for slow networks and Vercel cold starts
 })
 
 // Add auth token to all requests
@@ -72,19 +72,32 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.code === 'ECONNABORTED') {
-      console.error('[API] Request timeout:', error.config?.url)
-    } else if (error.message === 'Network Error') {
+      console.error('[API] Request timeout after 30s:', error.config?.url)
+      console.error('[API] Backend might be slow or experiencing issues')
+    } else if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
       console.error('[API] Network Error - Cannot reach backend at:', API_URL)
-      console.error('[API] Make sure backend is running and accessible')
-      console.error('[API] URL being called:', error.config?.url)
+      console.error('[API] Attempted URL:', error.config?.baseURL + error.config?.url)
+      console.error('[API] Error details:', {
+        message: error.message,
+        code: error.code,
+        requestURL: error.config?.url,
+        baseURL: error.config?.baseURL,
+      })
+      // Provide more helpful error message
+      if (API_URL.includes('vercel.app')) {
+        console.warn('[API] Vercel deployment might be cold starting or experiencing issues')
+        console.warn('[API] Try again in a few seconds')
+      }
     } else if (error.response?.status === 401) {
       console.error('[API] 401 Unauthorized:', error.config?.url)
-    } else {
+      console.error('[API] Check if user session is valid')
+    } else if (error.response) {
       console.error('[API] Request failed:', error.message, error.config?.url)
-      if (error.response) {
-        console.error('[API] Status:', error.response.status)
-        console.error('[API] Response:', error.response.data)
-      }
+      console.error('[API] Status:', error.response.status)
+      console.error('[API] Response:', error.response.data)
+    } else {
+      console.error('[API] Unknown error:', error.message, error.config?.url)
+      console.error('[API] Error object:', error)
     }
     return Promise.reject(error)
   }
@@ -279,6 +292,30 @@ export const updateSettings = async (data: Partial<UserSettings>): Promise<UserS
 // Predictions API
 export const getPredictions = async (): Promise<Prediction> => {
   const response = await api.get('/api/predictions')
+  return response.data
+}
+
+// Chat AI API
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[]
+  symptoms?: Array<{
+    symptom: string
+    severity?: string
+    frequency?: string
+  }>
+}
+
+export interface ChatResponse {
+  message: string
+}
+
+export const chatWithAI = async (data: ChatRequest): Promise<ChatResponse> => {
+  const response = await api.post('/api/chat', data)
   return response.data
 }
 
