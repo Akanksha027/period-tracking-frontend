@@ -42,7 +42,7 @@ import { Ionicons } from '@expo/vector-icons'
 import SymptomTracker from '../../components/SymptomTracker'
 import { symptomOptions } from '../../lib/symptomTips'
 
-const { width } = Dimensions.get('window')
+const { width, height: screenHeight } = Dimensions.get('window')
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export default function CalendarScreen() {
@@ -1065,9 +1065,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 24,
-    maxHeight: '85%',
+    height: screenHeight * 0.7, // 70% of screen height - more than half
     paddingBottom: 40,
-    minHeight: 400,
   },
   dayDetailHeader: {
     flexDirection: 'row',
