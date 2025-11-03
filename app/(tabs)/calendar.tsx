@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   View,
   Text,
@@ -60,6 +60,7 @@ export default function CalendarScreen() {
   const [dayMoods, setDayMoods] = useState<Mood[]>([])
   const [showSymptomTracker, setShowSymptomTracker] = useState(false)
   const [symptomTrackerDate, setSymptomTrackerDate] = useState<Date>(new Date())
+  const scrollViewRef = useRef<ScrollView>(null)
 
   const predictions = useMemo<CyclePredictions>(() => {
     return calculatePredictions(periods, settings)
@@ -89,10 +90,41 @@ export default function CalendarScreen() {
     loadData()
   }, [])
 
+  // Auto-scroll to current month when calendar is loaded
+  useEffect(() => {
+    if (!loading && months.length > 0 && scrollViewRef.current) {
+      // Find the index of the current month (month with index 2, since we start at -2)
+      const currentMonthIndex = 2
+      // Calculate approximate scroll position (each month is roughly 400px tall)
+      const monthHeight = 400
+      const scrollOffset = currentMonthIndex * monthHeight
+      
+      // Delay scroll to ensure layout is complete
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({
+          y: scrollOffset,
+          animated: true,
+        })
+      }, 300)
+    }
+  }, [loading, months.length])
+
   useFocusEffect(
     useCallback(() => {
       loadData()
-    }, [])
+      // Auto-scroll to current month when screen is focused
+      if (months.length > 0 && scrollViewRef.current) {
+        const currentMonthIndex = 2
+        const monthHeight = 400
+        const scrollOffset = currentMonthIndex * monthHeight
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({
+            y: scrollOffset,
+            animated: true,
+          })
+        }, 300)
+      }
+    }, [months.length])
   )
 
   const onRefresh = useCallback(async () => {
@@ -165,8 +197,33 @@ export default function CalendarScreen() {
       }
     }
 
+    // Check if it's ovulation day FIRST (exact day, not just fertile window)
+    // This takes precedence over fertile window to show ovulation day distinctly
+    if (predictions.ovulationDate) {
+      const ovulationDate = new Date(predictions.ovulationDate)
+      ovulationDate.setHours(0, 0, 0, 0)
+      if (date.getTime() === ovulationDate.getTime()) {
+        return { type: 'ovulation' }
+      }
+    }
+
+    // Check if it's PMS phase
+    if (dayInfo.isPMS) {
+      return { type: 'pms' }
+    }
+
+    // Check fertile window (but exclude ovulation day which is already handled above)
     if (dayInfo.isFertile) {
-      return { type: 'fertile' }
+      // Double check it's not ovulation day
+      if (predictions.ovulationDate) {
+        const ovulationDate = new Date(predictions.ovulationDate)
+        ovulationDate.setHours(0, 0, 0, 0)
+        if (date.getTime() !== ovulationDate.getTime()) {
+          return { type: 'fertile' }
+        }
+      } else {
+        return { type: 'fertile' }
+      }
     }
 
     if (dayInfo.phase === 'predicted_period') {
@@ -230,7 +287,13 @@ export default function CalendarScreen() {
         textStyle = [styles.dayText, styles.periodText]
       } else if (status.type === 'fertile') {
         containerStyle = [styles.dayCell, styles.fertileDay]
-        textStyle = [styles.dayText]
+        textStyle = [styles.dayText, styles.fertileText]
+      } else if (status.type === 'ovulation') {
+        containerStyle = [styles.dayCell, styles.ovulationDay]
+        textStyle = [styles.dayText, styles.ovulationText]
+      } else if (status.type === 'pms') {
+        containerStyle = [styles.dayCell, styles.pmsDay]
+        textStyle = [styles.dayText, styles.pmsText]
       } else if (status.type === 'predicted') {
         containerStyle = [
           styles.dayCell,
@@ -498,11 +561,19 @@ export default function CalendarScreen() {
           <Text style={styles.legendText}>Period</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#FFE066' }]} />
+          <View style={[styles.legendDot, { backgroundColor: '#87CEEB' }]} />
           <Text style={styles.legendText}>Fertile</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#87CEEB' }]} />
+          <View style={[styles.legendDot, { backgroundColor: '#4169E1' }]} />
+          <Text style={styles.legendText}>Ovulation</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#FFB6C1' }]} />
+          <Text style={styles.legendText}>PMS</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#B0D4F1' }]} />
           <Text style={styles.legendText}>Predicted</Text>
         </View>
       </View>
@@ -518,6 +589,7 @@ export default function CalendarScreen() {
 
       {/* Scrollable calendar */}
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -949,7 +1021,25 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   fertileDay: {
-    backgroundColor: '#FFE066',
+    backgroundColor: '#87CEEB', // Light blue for fertile window
+  },
+  fertileText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  ovulationDay: {
+    backgroundColor: '#4169E1', // Royal blue for ovulation day
+  },
+  ovulationText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  pmsDay: {
+    backgroundColor: '#FFB6C1', // Light pink for PMS
+  },
+  pmsText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   predictedDay: {
     backgroundColor: '#87CEEB',
