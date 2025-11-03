@@ -53,6 +53,7 @@ export default function HomeScreen() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [showSymptomTracker, setShowSymptomTracker] = useState(false)
   const [todaySymptoms, setTodaySymptoms] = useState<Symptom[]>([])
+  const [optimisticSymptoms, setOptimisticSymptoms] = useState<Array<{ symptom: string; severity?: number }>>([])
 
   const predictions = useMemo<CyclePredictions>(() => {
     return calculatePredictions(periods, settings)
@@ -932,6 +933,48 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             {/* Symptom Cards */}
+            {/* Show optimistic symptoms first (immediately when selected) */}
+            {optimisticSymptoms.map((optSymptom, idx) => {
+              const symptomInfo = symptomData[optSymptom.symptom as SymptomType]
+              if (!symptomInfo) return null
+              
+              const symptomOption = symptomOptions.find(opt => opt.type === optSymptom.symptom)
+              const displayLabel = symptomOption?.label || symptomInfo.title
+              
+              return (
+                <TouchableOpacity
+                  key={`optimistic-${idx}`}
+                  style={[styles.insightCard, styles.symptomCard]}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/chat',
+                      params: {
+                        initialQuestion: `I am having ${displayLabel.toLowerCase()}. Can you help me with tips and advice?`
+                      }
+                    })
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.symptomCardHeader}>
+                    <Text style={styles.symptomEmoji}>{symptomInfo.emoji}</Text>
+                    {optSymptom.severity && (
+                      <View style={styles.severityBadge}>
+                        <Text style={styles.severityText}>
+                          {optSymptom.severity}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.symptomCardContent}>
+                    <Text style={styles.symptomCardTitle} numberOfLines={2}>
+                      {displayLabel}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )
+            })}
+            
+            {/* Show saved symptoms from API */}
             {todaySymptoms.length > 0 ? (
               todaySymptoms.map((symptom) => {
                 const symptomInfo = symptomData[symptom.type as SymptomType]
@@ -1081,7 +1124,18 @@ export default function HomeScreen() {
             setShowSymptomTracker(false)
           }}
           onSave={() => {
+            // Reload data in background to sync with server
             loadData()
+          }}
+          onSymptomsSaved={(symptoms) => {
+            // Update UI immediately with selected symptoms (optimistic)
+            setOptimisticSymptoms(symptoms)
+            // Clear optimistic symptoms after data loads from server
+            setTimeout(() => {
+              loadData().then(() => {
+                setOptimisticSymptoms([])
+              })
+            }, 1000)
           }}
         />
       )}

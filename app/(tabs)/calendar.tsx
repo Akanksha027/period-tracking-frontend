@@ -252,7 +252,7 @@ export default function CalendarScreen() {
     return { type: 'normal' }
   }
 
-  const renderMonth = (monthDate: Date) => {
+  const renderMonth = useCallback((monthDate: Date) => {
     const year = monthDate.getFullYear()
     const month = monthDate.getMonth()
     const daysInMonth = getDaysInMonth(year, month)
@@ -592,6 +592,11 @@ export default function CalendarScreen() {
         ref={scrollViewRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={10}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }

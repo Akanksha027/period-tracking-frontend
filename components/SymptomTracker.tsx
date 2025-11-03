@@ -20,9 +20,10 @@ interface SymptomTrackerProps {
   date: Date
   onClose?: () => void
   onSave?: () => void
+  onSymptomsSaved?: (symptoms: Array<{ symptom: string; severity?: number }>) => void
 }
 
-export default function SymptomTracker({ date: initialDate, onClose, onSave }: SymptomTrackerProps) {
+export default function SymptomTracker({ date: initialDate, onClose, onSave, onSymptomsSaved }: SymptomTrackerProps) {
   const [selectedDate, setSelectedDate] = useState(initialDate)
   const [selectedSymptoms, setSelectedSymptoms] = useState<SymptomType[]>([])
   const [selectedMoods, setSelectedMoods] = useState<MoodType[]>([])
@@ -142,10 +143,17 @@ export default function SymptomTracker({ date: initialDate, onClose, onSave }: S
   const handleSave = async () => {
     setSaving(true)
     
-    // Optimistic update - close immediately for smooth UX
-    const dateString = selectedDate.toISOString()
+    // Optimistic update - notify parent immediately with selected symptoms
+    if (selectedSymptoms.length > 0 && onSymptomsSaved) {
+      const symptomsForCallback = selectedSymptoms.map(symptomType => ({
+        symptom: symptomType,
+        severity: 3,
+      }))
+      onSymptomsSaved(symptomsForCallback)
+    }
     
     // Close modal immediately (optimistic)
+    const dateString = selectedDate.toISOString()
     onSave?.()
     onClose?.()
     
