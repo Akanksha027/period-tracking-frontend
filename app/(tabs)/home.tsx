@@ -26,7 +26,7 @@ import {
   Symptom,
 } from '../../lib/api'
 import SymptomTracker from '../../components/SymptomTracker'
-import { symptomData, SymptomType } from '../../lib/symptomTips'
+import { symptomData, symptomOptions, SymptomType } from '../../lib/symptomTips'
 import { Ionicons } from '@expo/vector-icons'
 import {
   calculatePredictions,
