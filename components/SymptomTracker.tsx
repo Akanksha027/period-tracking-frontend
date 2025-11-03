@@ -40,42 +40,33 @@ export default function SymptomTracker({ date: initialDate, onClose, onSave }: S
 
   const loadExistingData = async () => {
     try {
-      // Create dates in UTC to avoid timezone shifts
-      const startOfDay = new Date(Date.UTC(
-        selectedDate.getFullYear(),
-        selectedDate.getMonth(),
-        selectedDate.getDate(),
-        0, 0, 0, 0
-      ))
-      const endOfDay = new Date(Date.UTC(
-        selectedDate.getFullYear(),
-        selectedDate.getMonth(),
-        selectedDate.getDate(),
-        23, 59, 59, 999
-      ))
+      const startOfDay = new Date(selectedDate)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(selectedDate)
+      endOfDay.setHours(23, 59, 59, 999)
 
       const [symptoms, moods] = await Promise.all([
         getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()),
         getMoods(startOfDay.toISOString(), endOfDay.toISOString()),
       ])
 
-      // Filter to exact date - compare dates without time
-      const selectedYear = selectedDate.getFullYear()
-      const selectedMonth = selectedDate.getMonth()
-      const selectedDay = selectedDate.getDate()
+      // Filter to exact date - be very strict about date matching
+      const selectedDateOnly = new Date(selectedDate)
+      selectedDateOnly.setHours(0, 0, 0, 0)
+      const selectedTimestamp = selectedDateOnly.getTime()
 
       const filteredSymptoms = symptoms.filter(s => {
         const symptomDate = new Date(s.date)
-        return symptomDate.getFullYear() === selectedYear &&
-               symptomDate.getMonth() === selectedMonth &&
-               symptomDate.getDate() === selectedDay
+        symptomDate.setHours(0, 0, 0, 0)
+        // Only include symptoms that match the exact date
+        return symptomDate.getTime() === selectedTimestamp
       })
       
       const filteredMoods = moods.filter(m => {
         const moodDate = new Date(m.date)
-        return moodDate.getFullYear() === selectedYear &&
-               moodDate.getMonth() === selectedMonth &&
-               moodDate.getDate() === selectedDay
+        moodDate.setHours(0, 0, 0, 0)
+        // Only include moods that match the exact date
+        return moodDate.getTime() === selectedTimestamp
       })
 
       setExistingSymptoms(filteredSymptoms)
@@ -150,57 +141,46 @@ export default function SymptomTracker({ date: initialDate, onClose, onSave }: S
 
   const handleSave = async () => {
     setSaving(true)
+    
+    // Optimistic update - close immediately for smooth UX
+    const dateString = selectedDate.toISOString()
+    
+    // Close modal immediately (optimistic)
+    onSave?.()
+    onClose?.()
+    
+    // Save in background - don't block UI
     try {
-      // Create date in UTC to avoid timezone shifts
-      const dateUTC = new Date(Date.UTC(
-        selectedDate.getFullYear(),
-        selectedDate.getMonth(),
-        selectedDate.getDate(),
-        12, 0, 0, 0  // Use noon UTC to avoid day boundary issues
-      ))
-      const dateString = dateUTC.toISOString()
+      // Parallel delete operations
+      const deletePromises = [
+        ...existingSymptoms.map(s => deleteSymptom(s.id).catch(err => console.log('Error deleting symptom:', err))),
+        ...existingMoods.map(m => deleteMood(m.id).catch(err => console.log('Error deleting mood:', err)))
+      ]
       
-      // Delete ALL existing symptoms and moods for this date first
-      for (const existingSymptom of existingSymptoms) {
-        try {
-          await deleteSymptom(existingSymptom.id)
-        } catch (err) {
-          console.log('Error deleting symptom:', err)
-        }
-      }
-
-      // Save currently selected symptoms
-      for (const symptomType of selectedSymptoms) {
-        await createSymptom({
-          date: dateString,
-          type: symptomType,
-          severity: 3, // Default severity
-        })
-      }
-
-      // Delete ALL existing moods for this date first
-      for (const existingMood of existingMoods) {
-        try {
-          await deleteMood(existingMood.id)
-        } catch (err) {
-          console.log('Error deleting mood:', err)
-        }
-      }
-
-      // Save currently selected moods
-      for (const moodType of selectedMoods) {
-        await createMood({
-          date: dateString,
-          type: moodType,
-        })
-      }
-
-      Alert.alert('💕 Saved!', 'Your symptoms and mood are saved.')
-      onSave?.()
-      onClose?.()
+      // Wait for deletes, then create new ones in parallel
+      await Promise.all(deletePromises)
+      
+      // Parallel create operations
+      const createPromises = [
+        ...selectedSymptoms.map(symptomType => 
+          createSymptom({
+            date: dateString,
+            type: symptomType,
+            severity: 3,
+          }).catch(err => console.log('Error creating symptom:', err))
+        ),
+        ...selectedMoods.map(moodType => 
+          createMood({
+            date: dateString,
+            type: moodType,
+          }).catch(err => console.log('Error creating mood:', err))
+        )
+      ]
+      
+      await Promise.all(createPromises)
     } catch (error: any) {
       console.error('Error saving:', error)
-      Alert.alert('Error', 'Failed to save. Please try again.')
+      // Silent error - user already sees success, don't interrupt
     } finally {
       setSaving(false)
     }
@@ -267,7 +247,7 @@ export default function SymptomTracker({ date: initialDate, onClose, onSave }: S
             <Text style={styles.sectionTitle}>Mood</Text>
             <View style={styles.grid}>
               {filteredMoods.map((option) => {
-                const isSelected = selectedMoods.includes(option.type)
+                const isSelected = selectedMoods.includes(option.type as MoodType)
                 return (
                   <TouchableOpacity
                     key={option.type}
@@ -276,7 +256,7 @@ export default function SymptomTracker({ date: initialDate, onClose, onSave }: S
                       styles.moodButton,
                       isSelected && styles.buttonSelected,
                     ]}
-                    onPress={() => toggleMood(option.type)}
+                    onPress={() => toggleMood(option.type as MoodType)}
                   >
                     <Text style={styles.buttonEmoji}>{option.emoji}</Text>
                     <Text style={[styles.buttonText, isSelected && styles.buttonTextSelected]}>

@@ -134,6 +134,10 @@ export default function CalendarScreen() {
   }, [])
 
   const loadData = async () => {
+    // Don't block UI - show calendar immediately with cached/empty data
+    setLoading(false)
+    
+    // Load data in background
     try {
       const [periodsData, settingsData] = await Promise.all([
         getPeriods().catch(() => []),
@@ -143,8 +147,6 @@ export default function CalendarScreen() {
       setSettings(settingsData)
     } catch (error) {
       console.error('Error loading calendar data:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -355,21 +357,21 @@ export default function CalendarScreen() {
   }
 
   const loadDaySymptoms = async (date: Date) => {
+    // Set empty arrays immediately for instant UI response
+    setDaySymptoms([])
+    setDayMoods([])
+    
+    // Load in background - don't block UI
     try {
       const startOfDay = new Date(date)
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(date)
       endOfDay.setHours(23, 59, 59, 999)
-
-      console.log('Loading symptoms for date:', startOfDay.toISOString(), 'to', endOfDay.toISOString())
       
       const [symptoms, moods] = await Promise.all([
         getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()),
         getMoods(startOfDay.toISOString(), endOfDay.toISOString()),
       ])
-      
-      console.log('Loaded symptoms:', symptoms)
-      console.log('Loaded moods:', moods)
       
       // Filter to ensure we only show symptoms for this exact date
       const filteredSymptoms = symptoms.filter(symptom => {
@@ -387,14 +389,12 @@ export default function CalendarScreen() {
                moodDate.getTime() <= endOfDay.getTime()
       })
       
-      console.log('Filtered symptoms:', filteredSymptoms)
-      console.log('Filtered moods:', filteredMoods)
+      // Update UI after data loads
       setDaySymptoms(filteredSymptoms)
       setDayMoods(filteredMoods)
     } catch (error) {
       console.error('Error loading day symptoms:', error)
-      setDaySymptoms([])
-      setDayMoods([])
+      // Already set to empty, so no need to update
     }
   }
 
