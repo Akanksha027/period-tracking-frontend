@@ -909,15 +909,95 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={styles.actionButtonContainer}
-            onPress={() => setShowSymptomTracker(true)}
+        {/* Daily Insights Section */}
+        <View style={styles.dailyInsightsSection}>
+          <Text style={styles.dailyInsightsTitle}>My daily insights</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.insightsScrollView}
+            contentContainerStyle={styles.insightsScrollContent}
           >
-            <Ionicons name="medical-outline" size={18} color="#9B8EE8" />
-            <Text style={styles.actionButtonText}>Add Symptoms</Text>
-          </TouchableOpacity>
+            {/* Add Symptoms Card */}
+            <TouchableOpacity 
+              style={[styles.insightCard, styles.addSymptomCard]}
+              onPress={() => setShowSymptomTracker(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.addSymptomIcon}>
+                <View style={styles.addSymptomCircle}>
+                  <Ionicons name="add" size={24} color="#FFFFFF" />
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {/* Symptom Cards */}
+            {todaySymptoms.length > 0 ? (
+              todaySymptoms.map((symptom) => {
+                const symptomInfo = symptomData[symptom.type as SymptomType]
+                if (!symptomInfo) return null
+                
+                // Get label from symptomOptions for display
+                const symptomOption = symptomOptions.find(opt => opt.type === symptom.type)
+                const displayLabel = symptomOption?.label || symptomInfo.title
+                
+                return (
+                  <TouchableOpacity
+                    key={symptom.id}
+                    style={[styles.insightCard, styles.symptomCard]}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/chat',
+                        params: {
+                          initialQuestion: `I am having ${displayLabel.toLowerCase()}. Can you help me with tips and advice?`
+                        }
+                      })
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.symptomCardHeader}>
+                      <Text style={styles.symptomEmoji}>{symptomInfo.emoji}</Text>
+                      {symptom.severity && (
+                        <View style={styles.severityBadge}>
+                          <Text style={styles.severityText}>
+                            {symptom.severity}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.symptomCardContent}>
+                      <Text style={styles.symptomCardTitle} numberOfLines={2}>
+                        {displayLabel}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )
+              })
+            ) : null}
+
+            {/* "Is it okay?" Card */}
+            <TouchableOpacity
+              style={[styles.insightCard, styles.questionCard]}
+              onPress={() => {
+                router.push({
+                  pathname: '/chat',
+                  params: {
+                    initialQuestion: 'Is it okay?'
+                  }
+                })
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={styles.questionCardContent}>
+                <View style={styles.questionIconCircle}>
+                  <Ionicons name="help-circle" size={32} color="#FFFFFF" />
+                </View>
+                <View style={styles.questionTextBox}>
+                  <Text style={styles.questionText}>Is it normal?</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
 
         {/* Phase Scientific Information Section */}
@@ -1122,6 +1202,127 @@ const styles = StyleSheet.create({
   phaseIconImage: {
     width: 40,
     height: 40,
+  },
+  dailyInsightsSection: {
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  dailyInsightsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  insightsScrollView: {
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+  },
+  insightsScrollContent: {
+    paddingRight: 20,
+    gap: 12,
+  },
+  insightCard: {
+    width: 140,
+    height: 160,
+    borderRadius: 16,
+    backgroundColor: Colors.white,
+    padding: 12,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  addSymptomCard: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  addSymptomIcon: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addSymptomCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  symptomCard: {
+    justifyContent: 'space-between',
+  },
+  symptomCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  symptomEmoji: {
+    fontSize: 32,
+  },
+  severityBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  severityText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  symptomCardContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  symptomCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  questionCard: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  questionCardContent: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  questionIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#9B8EE8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  questionTextBox: {
+    backgroundColor: Colors.background,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  questionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.text,
   },
   actionButtons: {
     flexDirection: 'row',

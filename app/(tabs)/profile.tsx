@@ -29,13 +29,24 @@ export default function Profile() {
   }, [])
 
   const loadSettings = async () => {
+    // Show UI immediately with default settings
+    setSettings({
+      averageCycleLength: 28,
+      averagePeriodLength: 5,
+      reminderEnabled: true,
+      reminderDaysBefore: 3,
+    })
+    setLoading(false)
+    
+    // Load actual settings in background
     try {
       const data = await getSettings()
-      setSettings(data)
+      if (data) {
+        setSettings(data)
+      }
     } catch (error) {
       console.error('Error loading settings:', error)
-    } finally {
-      setLoading(false)
+      // Keep default settings if load fails
     }
   }
 
