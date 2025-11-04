@@ -127,11 +127,11 @@ export function calculatePredictions(
   nextPeriodDate.setHours(0, 0, 0, 0)
   
   // If the predicted period is in the past, calculate the next one
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  if (nextPeriodDate.getTime() < today.getTime()) {
+  const todayCheck = new Date()
+  todayCheck.setHours(0, 0, 0, 0)
+  if (nextPeriodDate.getTime() < todayCheck.getTime()) {
     // Calculate how many cycles have passed and predict the next future period
-    const daysSinceLastPeriod = Math.floor((today.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24))
+    const daysSinceLastPeriod = Math.floor((todayCheck.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24))
     const cyclesSinceLastPeriod = Math.floor(daysSinceLastPeriod / finalCycleLength)
     const nextCycleStart = new Date(lastPeriodEnd)
     nextCycleStart.setDate(nextCycleStart.getDate() + (cyclesSinceLastPeriod + 1) * finalCycleLength)
