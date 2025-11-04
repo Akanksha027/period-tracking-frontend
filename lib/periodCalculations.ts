@@ -122,26 +122,44 @@ export function calculatePredictions(
   }
   
   // Next period starts after cycle length from the END of last period
-  const nextPeriodDate = new Date(lastPeriodEnd)
+  let nextPeriodDate = new Date(lastPeriodEnd)
   nextPeriodDate.setDate(nextPeriodDate.getDate() + finalCycleLength)
   nextPeriodDate.setHours(0, 0, 0, 0)
+  
+  // If the predicted period is in the past, calculate the next one
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (nextPeriodDate.getTime() < today.getTime()) {
+    // Calculate how many cycles have passed and predict the next future period
+    const daysSinceLastPeriod = Math.floor((today.getTime() - lastPeriodEnd.getTime()) / (1000 * 60 * 60 * 24))
+    const cyclesSinceLastPeriod = Math.floor(daysSinceLastPeriod / finalCycleLength)
+    const nextCycleStart = new Date(lastPeriodEnd)
+    nextCycleStart.setDate(nextCycleStart.getDate() + (cyclesSinceLastPeriod + 1) * finalCycleLength)
+    nextPeriodDate = nextCycleStart
+    nextPeriodDate.setHours(0, 0, 0, 0)
+  }
 
   // Calculate ovulation (cycle length - 14 days before next period)
   const ovulationDate = new Date(nextPeriodDate)
   ovulationDate.setDate(ovulationDate.getDate() - 14)
+  ovulationDate.setHours(0, 0, 0, 0)
 
   // Fertile window: 5 days before ovulation to ovulation day
   const fertileWindowStart = new Date(ovulationDate)
   fertileWindowStart.setDate(fertileWindowStart.getDate() - 5)
+  fertileWindowStart.setHours(0, 0, 0, 0)
 
   const fertileWindowEnd = new Date(ovulationDate)
+  fertileWindowEnd.setHours(23, 59, 59, 999)
 
   // PMS window: 5 days before next period to 1 day before
   const pmsStart = new Date(nextPeriodDate)
   pmsStart.setDate(pmsStart.getDate() - 5)
+  pmsStart.setHours(0, 0, 0, 0)
 
   const pmsEnd = new Date(nextPeriodDate)
   pmsEnd.setDate(pmsEnd.getDate() - 1)
+  pmsEnd.setHours(23, 59, 59, 999)
 
   // Confidence increases with more cycles
   let confidence: ConfidenceLevel = 'low'
