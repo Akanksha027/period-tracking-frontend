@@ -64,7 +64,24 @@ export default function CalendarScreen() {
   const scrollViewRef = useRef<ScrollView>(null)
 
   const predictions = useMemo<CyclePredictions>(() => {
-    return calculatePredictions(periods, settings)
+    const pred = calculatePredictions(periods, settings)
+    // Debug: Log predictions to see what's being calculated
+    if (pred.nextPeriodDate) {
+      console.log('[Calendar] Predictions calculated:', {
+        nextPeriodDate: pred.nextPeriodDate.toISOString().split('T')[0],
+        periodLength: pred.periodLength,
+        cycleLength: pred.cycleLength,
+        confidence: pred.confidence,
+        ovulationDate: pred.ovulationDate?.toISOString().split('T')[0],
+        fertileWindowStart: pred.fertileWindowStart?.toISOString().split('T')[0],
+        fertileWindowEnd: pred.fertileWindowEnd?.toISOString().split('T')[0],
+        pmsStart: pred.pmsStart?.toISOString().split('T')[0],
+        pmsEnd: pred.pmsEnd?.toISOString().split('T')[0],
+      })
+    } else {
+      console.log('[Calendar] No predicted period date calculated')
+    }
+    return pred
   }, [periods, settings])
 
   // Helper function for generating months
@@ -162,16 +179,6 @@ export default function CalendarScreen() {
 
   const getDayStatus = (date: Date) => {
     const dayInfo = getDayInfo(date, periods, predictions)
-    
-    // Debug: Log predicted period info for troubleshooting
-    if (dayInfo.phase === 'predicted_period') {
-      console.log('[Calendar] Predicted period detected:', {
-        date: date.toISOString().split('T')[0],
-        confidence: dayInfo.confidence,
-        nextPeriodDate: predictions.nextPeriodDate?.toISOString().split('T')[0],
-        periodLength: predictions.periodLength,
-      })
-    }
     
     // Check if it's an actual period day
     const isPeriodDay = periods.some((period) => {

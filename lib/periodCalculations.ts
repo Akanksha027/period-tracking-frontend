@@ -197,7 +197,17 @@ export function getDayInfo(
     const startTime = predictedPeriodStart.getTime()
     const endTime = predictedPeriodEnd.getTime()
     
+    // Debug: Log when checking predicted period range
     if (dayTime >= startTime && dayTime <= endTime) {
+      console.log('[PeriodCalc] Predicted period match:', {
+        date: dayDate.toISOString().split('T')[0],
+        start: predictedPeriodStart.toISOString().split('T')[0],
+        end: predictedPeriodEnd.toISOString().split('T')[0],
+        dayTime,
+        startTime,
+        endTime,
+      })
+      
       return {
         date: dayDate,
         phase: 'predicted_period',
