@@ -180,43 +180,8 @@ export function getDayInfo(
     }
   }
 
-  // Check fertile window
-  if (
-    predictions.fertileWindowStart &&
-    predictions.fertileWindowEnd &&
-    dayDate >= predictions.fertileWindowStart &&
-    dayDate <= predictions.fertileWindowEnd
-  ) {
-    return {
-      date: dayDate,
-      phase: 'fertile',
-      confidence: predictions.confidence,
-      isPeriod: false,
-      isFertile: true,
-      isPMS: false,
-      isPredicted: true,
-    }
-  }
-
-  // Check PMS window
-  if (
-    predictions.pmsStart &&
-    predictions.pmsEnd &&
-    dayDate >= predictions.pmsStart &&
-    dayDate <= predictions.pmsEnd
-  ) {
-    return {
-      date: dayDate,
-      phase: 'pms',
-      confidence: predictions.confidence,
-      isPeriod: false,
-      isFertile: false,
-      isPMS: true,
-      isPredicted: true,
-    }
-  }
-
-  // Check predicted period (only if we have predictions)
+  // Check predicted period FIRST (before fertile/PMS) to ensure it's prioritized
+  // This should be checked before fertile/PMS windows
   if (predictions.nextPeriodDate) {
     const predictedPeriodStart = new Date(predictions.nextPeriodDate)
     predictedPeriodStart.setHours(0, 0, 0, 0)
@@ -242,6 +207,42 @@ export function getDayInfo(
         isPMS: false,
         isPredicted: true,
       }
+    }
+  }
+
+  // Check fertile window (after predicted period check)
+  if (
+    predictions.fertileWindowStart &&
+    predictions.fertileWindowEnd &&
+    dayDate >= predictions.fertileWindowStart &&
+    dayDate <= predictions.fertileWindowEnd
+  ) {
+    return {
+      date: dayDate,
+      phase: 'fertile',
+      confidence: predictions.confidence,
+      isPeriod: false,
+      isFertile: true,
+      isPMS: false,
+      isPredicted: true,
+    }
+  }
+
+  // Check PMS window (after predicted period check)
+  if (
+    predictions.pmsStart &&
+    predictions.pmsEnd &&
+    dayDate >= predictions.pmsStart &&
+    dayDate <= predictions.pmsEnd
+  ) {
+    return {
+      date: dayDate,
+      phase: 'pms',
+      confidence: predictions.confidence,
+      isPeriod: false,
+      isFertile: false,
+      isPMS: true,
+      isPredicted: true,
     }
   }
 
