@@ -40,7 +40,7 @@ import {
 } from '../../lib/periodCalculations'
 import { Ionicons } from '@expo/vector-icons'
 import SymptomTracker from '../../components/SymptomTracker'
-import { symptomOptions } from '../../lib/symptomTips'
+import { symptomOptions, symptomData, SymptomType } from '../../lib/symptomTips'
 
 const { width, height: screenHeight } = Dimensions.get('window')
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -258,12 +258,36 @@ export default function CalendarScreen() {
     setDayMoods([])
     
     try {
+      // Convert dateString (YYYY-MM-DD) to ISO format for API
+      const [year, month, day] = dateString.split('-').map(Number)
+      const date = new Date(year, month - 1, day)
+      date.setHours(0, 0, 0, 0)
+      const startOfDay = date.toISOString()
+      
+      const endOfDay = new Date(date)
+      endOfDay.setHours(23, 59, 59, 999)
+      const endOfDayISO = endOfDay.toISOString()
+      
       const [symptoms, moods] = await Promise.all([
-        getSymptoms(dateString, dateString).catch(() => []),
-        getMoods(dateString, dateString).catch(() => [])
+        getSymptoms(startOfDay, endOfDayISO).catch(() => []),
+        getMoods(startOfDay, endOfDayISO).catch(() => [])
       ])
-      setDaySymptoms(symptoms)
-      setDayMoods(moods)
+      
+      // Filter to ensure we only show symptoms for this exact date
+      const filteredSymptoms = symptoms.filter(symptom => {
+        const symptomDate = new Date(symptom.date)
+        symptomDate.setHours(0, 0, 0, 0)
+        return symptomDate.getTime() === date.getTime()
+      })
+      
+      const filteredMoods = moods.filter(mood => {
+        const moodDate = new Date(mood.date)
+        moodDate.setHours(0, 0, 0, 0)
+        return moodDate.getTime() === date.getTime()
+      })
+      
+      setDaySymptoms(filteredSymptoms)
+      setDayMoods(filteredMoods)
     } catch (error) {
       console.error('Error loading day symptoms:', error)
     }

@@ -1123,19 +1123,20 @@ export default function HomeScreen() {
           onClose={() => {
             setShowSymptomTracker(false)
           }}
-          onSave={() => {
-            // Reload data in background to sync with server
-            loadData()
+          onSave={async () => {
+            // Reload data to sync with server - this will show real symptoms
+            await loadData()
           }}
           onSymptomsSaved={(symptoms) => {
             // Update UI immediately with selected symptoms (optimistic)
             setOptimisticSymptoms(symptoms)
-            // Clear optimistic symptoms after data loads from server
-            setTimeout(() => {
-              loadData().then(() => {
+            // Load data from server and replace optimistic symptoms
+            loadData().then(() => {
+              // Clear optimistic symptoms after a short delay to ensure smooth transition
+              setTimeout(() => {
                 setOptimisticSymptoms([])
-              })
-            }, 1000)
+              }, 500)
+            })
           }}
         />
       )}
