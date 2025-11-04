@@ -163,6 +163,16 @@ export default function CalendarScreen() {
   const getDayStatus = (date: Date) => {
     const dayInfo = getDayInfo(date, periods, predictions)
     
+    // Debug: Log predicted period info for troubleshooting
+    if (dayInfo.phase === 'predicted_period') {
+      console.log('[Calendar] Predicted period detected:', {
+        date: date.toISOString().split('T')[0],
+        confidence: dayInfo.confidence,
+        nextPeriodDate: predictions.nextPeriodDate?.toISOString().split('T')[0],
+        periodLength: predictions.periodLength,
+      })
+    }
+    
     // Check if it's an actual period day
     const isPeriodDay = periods.some((period) => {
       const start = new Date(period.startDate)
