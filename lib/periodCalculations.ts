@@ -216,14 +216,18 @@ export function getDayInfo(
     }
   }
 
-  // Check predicted period (only if we have predictions)
+  // Check predicted period (only if we have predictions and it's in the future)
   if (predictions.nextPeriodDate) {
-    const predictedPeriodEnd = new Date(predictions.nextPeriodDate)
+    const predictedPeriodStart = new Date(predictions.nextPeriodDate)
+    predictedPeriodStart.setHours(0, 0, 0, 0)
+    const predictedPeriodEnd = new Date(predictedPeriodStart)
     predictedPeriodEnd.setDate(
       predictedPeriodEnd.getDate() + predictions.periodLength - 1
     )
+    predictedPeriodEnd.setHours(23, 59, 59, 999)
 
-    if (dayDate >= predictions.nextPeriodDate && dayDate <= predictedPeriodEnd) {
+    // Show predicted period if date is within the predicted range
+    if (dayDate >= predictedPeriodStart && dayDate <= predictedPeriodEnd) {
       return {
         date: dayDate,
         phase: 'predicted_period',

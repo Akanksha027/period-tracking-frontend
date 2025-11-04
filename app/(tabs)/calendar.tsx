@@ -172,6 +172,7 @@ export default function CalendarScreen() {
       return date >= start && date <= end
     })
 
+    // If it's an actual period day, show it as period (not predicted)
     if (isPeriodDay) {
       // Find position in period (start, middle, end)
       const period = periods.find((p) => {
