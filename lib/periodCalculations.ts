@@ -68,17 +68,23 @@ export function calculatePredictions(
   for (let i = 0; i < sortedPeriods.length - 1; i++) {
     const current = new Date(sortedPeriods[i].startDate)
     const next = new Date(sortedPeriods[i + 1].startDate)
-    const diff = Math.abs(current.getTime() - next.getTime())
+    current.setHours(0, 0, 0, 0)
+    next.setHours(0, 0, 0, 0)
+    const diff = Math.abs(next.getTime() - current.getTime())
     const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
     totalCycleDays += days
     cycleCount++
   }
 
   // Use calculated average or fallback to settings/default
+  // IMPORTANT: If only one period, use settings/default (28 days is standard)
   const avgCycleLength =
     cycleCount > 0
       ? Math.round(totalCycleDays / cycleCount)
-      : settings?.averageCycleLength || 28
+      : (settings?.averageCycleLength || 28)
+  
+  // Ensure cycleLength is never 0 or negative
+  const finalCycleLength = avgCycleLength > 0 ? avgCycleLength : 28
 
   // Calculate average period length
   let totalPeriodDays = 0
@@ -104,9 +110,21 @@ export function calculatePredictions(
       ? Math.round(totalPeriodDays / periodCount)
       : settings?.averagePeriodLength || 5
 
-  // Predict next period
-  const nextPeriodDate = new Date(lastPeriodStart)
-  nextPeriodDate.setDate(nextPeriodDate.getDate() + avgCycleLength)
+  // Predict next period - calculate from END of last period, not START
+  // If period has an end date, use that; otherwise assume period length
+  let lastPeriodEnd = new Date(lastPeriodStart)
+  if (lastPeriod.endDate) {
+    lastPeriodEnd = new Date(lastPeriod.endDate)
+    lastPeriodEnd.setHours(0, 0, 0, 0)
+  } else {
+    // If no end date, assume period ended after average period length
+    lastPeriodEnd.setDate(lastPeriodEnd.getDate() + (avgPeriodLength || 5))
+  }
+  
+  // Next period starts after cycle length from the END of last period
+  const nextPeriodDate = new Date(lastPeriodEnd)
+  nextPeriodDate.setDate(nextPeriodDate.getDate() + finalCycleLength)
+  nextPeriodDate.setHours(0, 0, 0, 0)
 
   // Calculate ovulation (cycle length - 14 days before next period)
   const ovulationDate = new Date(nextPeriodDate)
@@ -140,7 +158,7 @@ export function calculatePredictions(
     fertileWindowEnd,
     pmsStart,
     pmsEnd,
-    cycleLength: avgCycleLength,
+    cycleLength: finalCycleLength,
     periodLength: avgPeriodLength,
     confidence,
   }
