@@ -14,7 +14,7 @@ import {
   Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Colors } from '../../constants/Colors'
 import {
@@ -46,6 +46,7 @@ const { width, height: screenHeight } = Dimensions.get('window')
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export default function CalendarScreen() {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [periods, setPeriods] = useState<Period[]>([])
   const [settings, setSettings] = useState<UserSettings | null>(null)
