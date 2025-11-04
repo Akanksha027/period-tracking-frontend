@@ -252,6 +252,40 @@ export default function CalendarScreen() {
     return { type: 'normal' }
   }
 
+  const loadDaySymptoms = useCallback(async (dateString: string) => {
+    // Clear immediately for instant UI response
+    setDaySymptoms([])
+    setDayMoods([])
+    
+    try {
+      const [symptoms, moods] = await Promise.all([
+        getSymptoms(dateString, dateString).catch(() => []),
+        getMoods(dateString, dateString).catch(() => [])
+      ])
+      setDaySymptoms(symptoms)
+      setDayMoods(moods)
+    } catch (error) {
+      console.error('Error loading day symptoms:', error)
+    }
+  }, [])
+
+  const handleDayPress = useCallback((dateString: string, date: Date) => {
+    const dayInfo = getDayInfo(date, periods, predictions)
+    
+    const periodForDay = periods.find((period) => {
+      const start = new Date(period.startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = period.endDate ? new Date(period.endDate) : start
+      end.setHours(0, 0, 0, 0)
+      return date >= start && date <= end
+    })
+    
+    setSelectedDate(dateString)
+    setSelectedDayInfo(dayInfo)
+    setShowDayDetail(true)
+    loadDaySymptoms(dateString)
+  }, [periods, predictions, loadDaySymptoms])
+
   const renderMonth = useCallback((monthDate: Date) => {
     const year = monthDate.getFullYear()
     const month = monthDate.getMonth()
@@ -336,67 +370,7 @@ export default function CalendarScreen() {
         </View>
       </View>
     )
-  }
-
-  const handleDayPress = (dateString: string, date: Date) => {
-    const dayInfo = getDayInfo(date, periods, predictions)
-    
-    const periodForDay = periods.find((period) => {
-      const start = new Date(period.startDate)
-      start.setHours(0, 0, 0, 0)
-      const end = period.endDate ? new Date(period.endDate) : start
-      end.setHours(0, 0, 0, 0)
-      return date >= start && date <= end
-    })
-    
-    setSelectedDate(dateString)
-    setSelectedDayInfo(dayInfo)
-    setEditingPeriod(periodForDay || null)
-    setShowDayDetail(true)
-    loadDaySymptoms(date)
-  }
-
-  const loadDaySymptoms = async (date: Date) => {
-    // Set empty arrays immediately for instant UI response
-    setDaySymptoms([])
-    setDayMoods([])
-    
-    // Load in background - don't block UI
-    try {
-      const startOfDay = new Date(date)
-      startOfDay.setHours(0, 0, 0, 0)
-      const endOfDay = new Date(date)
-      endOfDay.setHours(23, 59, 59, 999)
-      
-      const [symptoms, moods] = await Promise.all([
-        getSymptoms(startOfDay.toISOString(), endOfDay.toISOString()),
-        getMoods(startOfDay.toISOString(), endOfDay.toISOString()),
-      ])
-      
-      // Filter to ensure we only show symptoms for this exact date
-      const filteredSymptoms = symptoms.filter(symptom => {
-        const symptomDate = new Date(symptom.date)
-        symptomDate.setHours(0, 0, 0, 0)
-        return symptomDate.getTime() >= startOfDay.getTime() && 
-               symptomDate.getTime() <= endOfDay.getTime()
-      })
-      
-      // Filter moods for exact date
-      const filteredMoods = moods.filter(mood => {
-        const moodDate = new Date(mood.date)
-        moodDate.setHours(0, 0, 0, 0)
-        return moodDate.getTime() >= startOfDay.getTime() && 
-               moodDate.getTime() <= endOfDay.getTime()
-      })
-      
-      // Update UI after data loads
-      setDaySymptoms(filteredSymptoms)
-      setDayMoods(filteredMoods)
-    } catch (error) {
-      console.error('Error loading day symptoms:', error)
-      // Already set to empty, so no need to update
-    }
-  }
+  }, [periods, predictions, handleDayPress, getDayStatus])
 
   const handleEditPeriod = () => {
     if (!editingPeriod) return
@@ -888,7 +862,8 @@ export default function CalendarScreen() {
               // Parse date string in local timezone to avoid UTC conversion issues
               const [year, month, day] = selectedDate.split('-').map(Number)
               const date = new Date(year, month - 1, day)
-              await loadDaySymptoms(date)
+              const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+              await loadDaySymptoms(dateString)
               await loadData()
             }
           }}
