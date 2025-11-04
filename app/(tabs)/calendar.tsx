@@ -738,16 +738,29 @@ export default function CalendarScreen() {
                       <Text style={styles.symptomsTitle}>Symptoms logged:</Text>
                       <View style={styles.symptomsList}>
                         {daySymptoms.map((symptom) => {
-                          // Import symptom options for labels
                           const symptomOption = symptomOptions.find(s => s.type === symptom.type)
-                          const symptomInfo = symptomOption 
-                            ? { label: symptomOption.label, emoji: symptomOption.emoji }
-                            : { label: symptom.type, emoji: '📝' }
+                          const symptomInfo = symptomData[symptom.type as SymptomType]
+                          const displayLabel = symptomOption?.label || symptomInfo?.title || symptom.type
+                          const emoji = symptomOption?.emoji || symptomInfo?.emoji || '📝'
+                          
                           return (
-                            <View key={symptom.id} style={styles.symptomBadge}>
-                              <Text style={styles.symptomBadgeEmoji}>{symptomInfo.emoji}</Text>
-                              <Text style={styles.symptomBadgeText}>{symptomInfo.label}</Text>
-                            </View>
+                            <TouchableOpacity
+                              key={symptom.id}
+                              style={styles.symptomBadge}
+                              onPress={() => {
+                                setShowDayDetail(false)
+                                router.push({
+                                  pathname: '/chat',
+                                  params: {
+                                    initialQuestion: `I am having ${displayLabel.toLowerCase()}. Can you help me with tips and advice?`
+                                  }
+                                })
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.symptomBadgeEmoji}>{emoji}</Text>
+                              <Text style={styles.symptomBadgeText}>{displayLabel}</Text>
+                            </TouchableOpacity>
                           )
                         })}
                       </View>
