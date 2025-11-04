@@ -363,7 +363,7 @@ export default function CalendarScreen() {
           status.isLast && styles.periodLast,
           status.isSingle && styles.periodSingle,
         ].filter(Boolean)
-        textStyle = [styles.dayText, styles.periodText]
+        textStyle = [styles.dayText, styles.predictedText]
       } else if (status.type === 'predicted_low') {
         containerStyle = [
           styles.dayCell,
@@ -372,7 +372,7 @@ export default function CalendarScreen() {
           status.isLast && styles.periodLast,
           status.isSingle && styles.periodSingle,
         ].filter(Boolean)
-        textStyle = [styles.dayText, styles.periodText]
+        textStyle = [styles.dayText, styles.predictedText]
       }
       
       days.push(
@@ -1059,10 +1059,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   predictedDay: {
-    backgroundColor: '#87CEEB',
+    backgroundColor: '#90EE90', // Light green for predicted periods
   },
   predictedLowDay: {
-    backgroundColor: '#B0D4F1',
+    backgroundColor: '#B0E0B0', // Lighter green for low confidence predictions
+  },
+  predictedText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   dotIndicator: {
     width: 4,
