@@ -247,18 +247,57 @@ export default function CalendarScreen() {
       }
     }
 
-    if (dayInfo.phase === 'predicted_period') {
-      // Check if first or last of predicted period
+    // Check predicted period - this should be checked for all predicted dates
+    // Check if the date falls within predicted period range directly
+    if (predictions.nextPeriodDate) {
+      const predictedPeriodStart = new Date(predictions.nextPeriodDate)
+      predictedPeriodStart.setHours(0, 0, 0, 0)
+      const predictedPeriodEnd = new Date(predictedPeriodStart)
+      predictedPeriodEnd.setDate(predictedPeriodEnd.getDate() + predictions.periodLength - 1)
+      predictedPeriodEnd.setHours(23, 59, 59, 999)
+      
+      const dateTime = date.getTime()
+      const startTime = predictedPeriodStart.getTime()
+      const endTime = predictedPeriodEnd.getTime()
+      
+      if (dateTime >= startTime && dateTime <= endTime) {
+        // Check if first or last of predicted period
+        const yesterday = new Date(date)
+        yesterday.setDate(yesterday.getDate() - 1)
+        yesterday.setHours(0, 0, 0, 0)
+        const tomorrow = new Date(date)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(0, 0, 0, 0)
+        
+        const yesterdayTime = yesterday.getTime()
+        const tomorrowTime = tomorrow.getTime()
+        
+        const isFirst = yesterdayTime < startTime
+        const isLast = tomorrowTime > endTime
+        
+        return {
+          type: predictions.confidence === 'low' ? 'predicted_low' : 'predicted',
+          isFirst,
+          isLast,
+          isSingle: isFirst && isLast,
+        }
+      }
+    }
+    
+    // Fallback: check dayInfo for predicted period
+    if (dayInfo.phase === 'predicted_period' || dayInfo.isPredicted) {
       const yesterday = new Date(date)
       yesterday.setDate(yesterday.getDate() - 1)
+      yesterday.setHours(0, 0, 0, 0)
       const tomorrow = new Date(date)
       tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setHours(0, 0, 0, 0)
       
       const yesterdayInfo = getDayInfo(yesterday, periods, predictions)
       const tomorrowInfo = getDayInfo(tomorrow, periods, predictions)
       
-      const isFirst = !yesterdayInfo.isPredicted
-      const isLast = !tomorrowInfo.isPredicted
+      const isFirst = yesterdayInfo.phase !== 'predicted_period'
+      const isLast = tomorrowInfo.phase !== 'predicted_period'
       
       return {
         type: dayInfo.confidence === 'low' ? 'predicted_low' : 'predicted',
